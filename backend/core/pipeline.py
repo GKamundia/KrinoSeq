@@ -4,7 +4,7 @@ Filter pipeline architecture for chaining multiple filtering methods.
 
 from typing import Dict, List, Any, Optional, Callable
 import copy
-from ..filters import apply_optimal_filter
+from ..filters import apply_optimal_filter, apply_optimal_filter_with_details
 from .visualization import generate_length_distribution
 
 
@@ -23,12 +23,19 @@ class FilterStage:
         self.params = params
         self.filtered_count = 0
         self.original_count = 0
+        self.process_details = {}  # NEW: Store detailed filtering process information
     
     def apply(self, seq_lengths: Dict[str, int]) -> Dict[str, int]:
         """Apply this filter stage to the sequences."""
         self.original_count = len(seq_lengths)
-        result = apply_optimal_filter(seq_lengths, method=self.method, **self.params)
+        
+        # NEW: Get both filtered sequences and process details
+        result, process_details = apply_optimal_filter_with_details(
+            seq_lengths, method=self.method, **self.params
+        )
+        
         self.filtered_count = len(result)
+        self.process_details = process_details  # Store the details
         return result
     
     def get_stats(self) -> Dict[str, Any]:
@@ -41,7 +48,8 @@ class FilterStage:
             "reduction_percent": (
                 (self.original_count - self.filtered_count) / self.original_count * 100
                 if self.original_count > 0 else 0
-            )
+            ),
+            "process_details": self.process_details  # NEW: Include process details
         }
 
 
