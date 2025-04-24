@@ -8,9 +8,6 @@ import {
   Button,
   CircularProgress,
   Grid,
-  // Remove unused imports to fix ESLint warnings
-  // Divider,
-  // Link,
   Card,
   CardContent,
   Tabs,
@@ -24,6 +21,7 @@ import StatusAlert from '../components/StatusAlert';
 import SequenceStatsCard from '../components/SequenceStatsCard';
 import LengthDistributionChart from '../components/LengthDistributionChart';
 import FilteringResultsSummary from '../components/FilteringResultsSummary';
+import FilteringProcessDetails from '../components/FilteringProcessDetails';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -58,22 +56,22 @@ interface SummaryData {
     total_length?: number;
     n50?: number;
     l50?: number;
-    min_length?: number; // Added min_length
-    max_length?: number; // Added max_length
-    mean_length?: number; // Added mean_length
-    median_length?: number; // Added median_length
-    std_dev?: number; // Add this line
+    min_length?: number;
+    max_length?: number;
+    mean_length?: number;
+    median_length?: number;
+    std_dev?: number;
   };
   output_file?: {
     sequence_count?: number;
     total_length?: number;
     n50?: number;
     l50?: number;
-    min_length?: number; // Added min_length
-    max_length?: number; // Added max_length
-    mean_length?: number; // Added mean_length
-    median_length?: number; // Added median_length
-    std_dev?: number; // Add this line
+    min_length?: number;
+    max_length?: number;
+    mean_length?: number;
+    median_length?: number;
+    std_dev?: number;
   };
 }
 
@@ -97,12 +95,10 @@ const ResultsPage: React.FC = () => {
       try {
         setLoading(true);
         
-        // First get job status to determine if filtering is complete
         const status = await getJobStatus(jobId);
         setJobInfo(status);
         
         if (status.status === JobStatus.COMPLETED) {
-          // If job is completed, get full results
           const filterResults = await getFilterResults(jobId);
           setResults(filterResults);
         }
@@ -116,7 +112,6 @@ const ResultsPage: React.FC = () => {
 
     fetchResults();
     
-    // Poll for updates if job is still processing
     const intervalId = setInterval(() => {
       if (jobInfo?.status === JobStatus.PROCESSING) {
         fetchResults();
@@ -155,7 +150,6 @@ const ResultsPage: React.FC = () => {
     );
   }
 
-  // Fix: Use type assertions to tell TypeScript about the shape of our objects
   const summary = (results?.summary || {}) as SummaryData;
   const inputFile = summary.input_file || {};
   const outputFile = summary.output_file || {};
@@ -180,7 +174,6 @@ const ResultsPage: React.FC = () => {
           <Paper sx={{ p: 3, mb: 4 }}>
             <Grid container spacing={3}>
               <Grid item xs={12}>
-                {/* Pass the safe summary object */}
                 <FilteringResultsSummary summary={summary} />
               </Grid>
               
@@ -222,6 +215,7 @@ const ResultsPage: React.FC = () => {
                 <Tab label="Before/After Comparison" id="results-tab-0" />
                 <Tab label="Original Contigs" id="results-tab-1" />
                 <Tab label="Filtered Contigs" id="results-tab-2" />
+                <Tab label="Filtering Process" id="results-tab-3" />
               </Tabs>
             </Box>
             
@@ -240,10 +234,10 @@ const ResultsPage: React.FC = () => {
                           sequenceCount={inputFile.sequence_count || 0}
                           basicStats={{
                             total: inputFile.total_length || 0,
-                            min: inputFile.min_length || 0,  // Changed from min to min_length
-                            max: inputFile.max_length || 0,  // Changed from max to max_length
-                            mean: inputFile.mean_length || 0, // Changed from mean to mean_length
-                            median: inputFile.median_length || 0, // Changed from median to median_length
+                            min: inputFile.min_length || 0,
+                            max: inputFile.max_length || 0,
+                            mean: inputFile.mean_length || 0,
+                            median: inputFile.median_length || 0,
                             std_dev: inputFile.std_dev || 0,
                             count: inputFile.sequence_count || 0
                           }}
@@ -259,10 +253,10 @@ const ResultsPage: React.FC = () => {
                           sequenceCount={outputFile.sequence_count || 0}
                           basicStats={{
                             total: outputFile.total_length || 0,
-                            min: outputFile.min_length || 0,  // Updated property name
-                            max: outputFile.max_length || 0,  // Updated property name
-                            mean: outputFile.mean_length || 0, // Updated property name
-                            median: outputFile.median_length || 0, // Updated property name
+                            min: outputFile.min_length || 0,
+                            max: outputFile.max_length || 0,
+                            mean: outputFile.mean_length || 0,
+                            median: outputFile.median_length || 0,
                             std_dev: outputFile.std_dev || 0,
                             count: outputFile.sequence_count || 0
                           }}
@@ -289,10 +283,10 @@ const ResultsPage: React.FC = () => {
                       sequenceCount={inputFile.sequence_count || 0}
                       basicStats={{
                         total: inputFile.total_length || 0,
-                        min: inputFile.min_length || 0,  // Changed from min to min_length
-                        max: inputFile.max_length || 0,  // Changed from max to max_length
-                        mean: inputFile.mean_length || 0, // Changed from mean to mean_length
-                        median: inputFile.median_length || 0, // Changed from median to median_length
+                        min: inputFile.min_length || 0,
+                        max: inputFile.max_length || 0,
+                        mean: inputFile.mean_length || 0,
+                        median: inputFile.median_length || 0,
                         std_dev: inputFile.std_dev || 0,
                         count: inputFile.sequence_count || 0
                       }}
@@ -326,10 +320,10 @@ const ResultsPage: React.FC = () => {
                       sequenceCount={outputFile.sequence_count || 0}
                       basicStats={{
                         total: outputFile.total_length || 0,
-                        min: outputFile.min_length || 0,  // Updated property name
-                        max: outputFile.max_length || 0,  // Updated property name
-                        mean: outputFile.mean_length || 0, // Updated property name
-                        median: outputFile.median_length || 0, // Updated property name
+                        min: outputFile.min_length || 0,
+                        max: outputFile.max_length || 0,
+                        mean: outputFile.mean_length || 0,
+                        median: outputFile.median_length || 0,
                         std_dev: outputFile.std_dev || 0,
                         count: outputFile.sequence_count || 0
                       }}
@@ -349,6 +343,10 @@ const ResultsPage: React.FC = () => {
                     </Grid>
                   )}
                 </Grid>
+              </TabPanel>
+
+              <TabPanel value={tabValue} index={3}>
+                <FilteringProcessDetails filteringProcess={results?.filtering_process || []} />
               </TabPanel>
             </CardContent>
           </Card>

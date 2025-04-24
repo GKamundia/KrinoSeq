@@ -111,6 +111,15 @@ export interface FilteringSummary {
   timestamp: string;
 }
 
+export interface FilterProcessStage {
+  method: string;
+  params: any;
+  sequences_before: number;
+  sequences_after: number;
+  reduction_percent: number;
+  process_details: any;
+}
+
 export interface FilterResults {
   job_id: string;
   status: JobStatus;
@@ -120,5 +129,6 @@ export interface FilterResults {
     before: VisualizationData;
     after: VisualizationData;
   };
+  filtering_process?: FilterProcessStage[];
   message?: string;
 }

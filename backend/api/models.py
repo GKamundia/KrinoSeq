@@ -79,11 +79,19 @@ class ResultSummary(BaseModel):
     timestamp: str
 
 
+class FilteringProcessDetails(BaseModel):
+    """Detailed information about the filtering process"""
+    method: str
+    params: Dict[str, Any]
+    process_details: Dict[str, Any]
+
+
 class FilterResultResponse(BaseModel):
     """Response for filter results endpoint"""
     job_id: str
     status: JobStatus
-    summary: Optional[ResultSummary] = None
+    summary: Optional[Dict[str, Any]] = None
     download_url: Optional[str] = None
     visualization_data: Optional[Dict[str, Any]] = None
+    filtering_process: Optional[List[FilteringProcessDetails]] = None  # Added field
     message: Optional[str] = None

@@ -283,7 +283,7 @@ async def run_filter_job(job_id: str):
         # Store results
         job_info["status"] = JobStatus.COMPLETED
         job_info["message"] = "Filtering completed successfully"
-        job_info["results"] = results
+        job_info["results"] = results  # This should include all data from workflow.run()
         
     except Exception as e:
         job_info["status"] = JobStatus.FAILED
@@ -312,6 +312,12 @@ async def get_filter_results(job_id: str):
     
     # Prepare visualization data
     if "summary" in results:
+        # Extract filtering process details from pipeline stages
+        filtering_process = []
+        if "summary" in results and "pipeline_report" in results["summary"]:
+            if "stages" in results["summary"]["pipeline_report"]:
+                filtering_process = results["summary"]["pipeline_report"]["stages"]
+        
         return FilterResultResponse(
             job_id=job_id,
             status=JobStatus.COMPLETED,
@@ -321,6 +327,7 @@ async def get_filter_results(job_id: str):
                 "before": job_info.get("file_info", {}).get("visualization_data", {}),
                 "after": results.get("summary", {}).get("output_file", {}).get("visualization_data", {})
             },
+            filtering_process=filtering_process,  # Include detailed filtering process information
             message="Filtering completed successfully"
         )
     else:

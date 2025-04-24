@@ -163,7 +163,7 @@ const ConfigurePage: React.FC = () => {
             <Grid container spacing={3}>
               <Grid item xs={12}>
                 <SequenceStatsCard 
-                  title="Sequence Statistics"
+                  title="Contig Statistics"
                   sequenceCount={jobInfo.file_info.sequence_count}
                   basicStats={jobInfo.file_info.basic_stats}
                   assemblyStats={jobInfo.file_info.assembly_stats}
@@ -173,7 +173,7 @@ const ConfigurePage: React.FC = () => {
               <Grid item xs={12}>
                 <LengthDistributionChart 
                   data={jobInfo.file_info.visualization_data}
-                  title="Sequence Length Distribution"
+                  title="Contig Length Distribution"
                 />
               </Grid>
             </Grid>
