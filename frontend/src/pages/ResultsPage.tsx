@@ -220,8 +220,8 @@ const ResultsPage: React.FC = () => {
                 centered
               >
                 <Tab label="Before/After Comparison" id="results-tab-0" />
-                <Tab label="Original Sequences" id="results-tab-1" />
-                <Tab label="Filtered Sequences" id="results-tab-2" />
+                <Tab label="Original Contigs" id="results-tab-1" />
+                <Tab label="Filtered Contigs" id="results-tab-2" />
               </Tabs>
             </Box>
             
@@ -281,7 +281,7 @@ const ResultsPage: React.FC = () => {
                 <Grid container spacing={3}>
                   <Grid item xs={12}>
                     <Typography variant="h6" gutterBottom>
-                      Original Sequence Statistics
+                      Original Contig Statistics
                     </Typography>
                     
                     <SequenceStatsCard 
@@ -318,7 +318,7 @@ const ResultsPage: React.FC = () => {
                 <Grid container spacing={3}>
                   <Grid item xs={12}>
                     <Typography variant="h6" gutterBottom>
-                      Filtered Sequence Statistics
+                      Filtered Contig Statistics
                     </Typography>
                     
                     <SequenceStatsCard 
