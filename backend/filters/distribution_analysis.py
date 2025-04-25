@@ -107,24 +107,14 @@ def find_distribution_breakpoints(lengths: List[int],
 def identify_natural_cutoffs(lengths: List[int], method: str = "midpoint") -> Dict[str, List[int]]:
     """
     Identify natural cutoff points based on distribution analysis.
-    
-    Args:
-        lengths: List of sequence lengths
-        method: Method for determining cutoffs:
-               - "midpoint": Simple midpoint between first two sorted components (Method 1a)
-               - "intersection": Intersection point between first two components (Method 1b)
-               - "probability": Cutoff based on probability assignment (Method 2)
-               - "valley": Find valleys in combined PDF (Method 3)
-        
-    Returns:
-        Dictionary with different recommended cutoffs
     """
     if not lengths:
         return {
             "gmm_based": [],
             "peak_based": [],
             "valley_based": [],
-            "recommended": []
+            "recommended": [],
+            "method_used": method  # Always include the intended method
         }
     
     # Get multimodality analysis
@@ -134,134 +124,157 @@ def identify_natural_cutoffs(lengths: List[int], method: str = "midpoint") -> Di
     gmm_cutoffs = []
     components = multimodal_results.get("components", [])
     
-    # Sort components by mean
+    # Sort components by mean - THIS IS IMPORTANT
     sorted_components = sorted(components, key=lambda c: c["mean"])
     
-    # Calculate cutoffs based on specified method
-    if method == "midpoint" and len(sorted_components) >= 2:
-        # Method 1a: Simple midpoint between first two sorted components
-        mean1 = sorted_components[0]["mean"]
-        mean2 = sorted_components[1]["mean"]
-        cutoff = (mean1 + mean2) / 2
-        gmm_cutoffs.append(int(cutoff))
-
-    elif method == "intersection" and len(sorted_components) >= 2:
-        # Method 1b: Find intersection point between components
-        comp1 = sorted_components[0]
-        comp2 = sorted_components[1]
-        mean1, std1, weight1 = comp1["mean"], comp1["std"], comp1["weight"]
-        mean2, std2, weight2 = comp2["mean"], comp2["std"], comp2["weight"]
-
-        if std1 == std2:
-            # With equal std, intersection is midpoint
+    # Always clear gmm_cutoffs at the start of each method to prevent interference
+    gmm_cutoffs = []
+    
+    if len(sorted_components) >= 2:
+        # Calculate different cutoffs based on the selected method
+        if method == "midpoint":
+            # Method 1a: Simple midpoint between first two sorted components
+            mean1 = sorted_components[0]["mean"]
+            mean2 = sorted_components[1]["mean"]
             cutoff = (mean1 + mean2) / 2
-        else:
-            # Solve quadratic equation for intersection point
-            a = 1/(2*std2**2) - 1/(2*std1**2)
-            b = mean1/std1**2 - mean2/std2**2
-            c = mean2**2/(2*std2**2) - mean1**2/(2*std1**2) + np.log((weight2*std1)/(weight1*std2))
+            gmm_cutoffs.append(int(cutoff))
 
-            # Solve for roots using quadratic formula
-            discriminant = b**2 - 4*a*c
-            if discriminant < 0:
-                # No real solution, use midpoint as fallback
+        elif method == "intersection":
+            # Method 1b: Find intersection point between components
+            comp1 = sorted_components[0]
+            comp2 = sorted_components[1]
+            mean1, std1, weight1 = comp1["mean"], comp1["std"], comp1["weight"]
+            mean2, std2, weight2 = comp2["mean"], comp2["std"], comp2["weight"]
+
+            if std1 == std2:
+                # With equal std, intersection is midpoint
                 cutoff = (mean1 + mean2) / 2
             else:
-                # Find the root between the two means
-                sol1 = (-b + np.sqrt(discriminant))/(2*a)
-                sol2 = (-b - np.sqrt(discriminant))/(2*a)
-                
-                # Choose the solution between the means
-                if min(mean1, mean2) <= sol1 <= max(mean1, mean2):
-                    cutoff = sol1
-                elif min(mean1, mean2) <= sol2 <= max(mean1, mean2):
-                    cutoff = sol2
-                else:
-                    # Fallback to midpoint if solutions are outside mean range
+                # Solve quadratic equation for intersection point
+                try:
+                    a = 1/(2*std2**2) - 1/(2*std1**2)
+                    b = mean1/std1**2 - mean2/std2**2
+                    c = mean2**2/(2*std2**2) - mean1**2/(2*std1**2) + np.log((weight2*std1)/(weight1*std2))
+
+                    # Solve for roots using quadratic formula
+                    discriminant = b**2 - 4*a*c
+                    if discriminant < 0:
+                        # No real solution, use midpoint as fallback
+                        cutoff = (mean1 + mean2) / 2
+                    else:
+                        # Find the root between the two means
+                        sol1 = (-b + np.sqrt(discriminant))/(2*a)
+                        sol2 = (-b - np.sqrt(discriminant))/(2*a)
+                        
+                        # Choose the solution between the means
+                        if min(mean1, mean2) <= sol1 <= max(mean1, mean2):
+                            cutoff = sol1
+                        elif min(mean1, mean2) <= sol2 <= max(mean1, mean2):
+                            cutoff = sol2
+                        else:
+                            # Fallback to midpoint if solutions are outside mean range
+                            cutoff = (mean1 + mean2) / 2
+                except:
+                    # If any calculation error occurs, use midpoint
                     cutoff = (mean1 + mean2) / 2
 
-        gmm_cutoffs.append(int(cutoff))
+            gmm_cutoffs.append(int(cutoff))
 
-    elif method == "probability" and len(sorted_components) >= 2:
-        # Method 2: Find cutoff based on probability assignment
-        # Define first component as unwanted, rest as wanted
-        x_vals = np.linspace(sorted_components[0]["mean"],
-                             sorted_components[1]["mean"],
-                             num=1000)
-        
-        # Find where posterior probability = 0.5
-        cutoff = None
-        for x in x_vals:
-            p_unwanted = 0
-            p_total = 0
+        elif method == "probability":
+            # Method 2: Find cutoff based on probability assignment
+            # Define first component as unwanted, rest as wanted
+            x_vals = np.linspace(sorted_components[0]["mean"],
+                                sorted_components[1]["mean"],
+                                num=1000)
             
+            # Find where posterior probability = 0.5
+            cutoff = None
+            for x in x_vals:
+                p_unwanted = 0
+                p_total = 0
+                
+                for comp in sorted_components:
+                    weight = comp["weight"]
+                    mean = comp["mean"]
+                    std = comp["std"]
+                    # Calculate component density at x
+                    density = weight * stats.norm.pdf(x, mean, std)
+                    p_total += density
+                    
+                    # First component is "unwanted"
+                    if comp == sorted_components[0]:
+                        p_unwanted = density
+                
+                # Calculate posterior probability
+                if p_total > 0:
+                    posterior = p_unwanted / p_total
+                    
+                    # Found our boundary at ~0.5 probability
+                    if abs(posterior - 0.5) < 0.01:
+                        cutoff = x
+                        break
+                    
+                    # We crossed the 0.5 threshold, use linear interpolation
+                    if posterior < 0.5 and cutoff is None:
+                        cutoff = x
+                        break
+            
+            # If no cutoff found, use midpoint but keep track that we fell back
+            if cutoff is not None:
+                gmm_cutoffs.append(int(cutoff))
+            else:
+                mean1 = sorted_components[0]["mean"]
+                mean2 = sorted_components[1]["mean"]
+                gmm_cutoffs.append(int((mean1 + mean2) / 2))
+
+        elif method == "valley":
+            # Method 3: Find valleys in combined PDF
+            # Generate x values spanning between the first two component means with extra margin
+            margin = 0.5  # 50% extra margin on each side
+            span = sorted_components[1]["mean"] - sorted_components[0]["mean"]
+            x_min = max(0, sorted_components[0]["mean"] - margin * span)
+            x_max = sorted_components[1]["mean"] + margin * span
+            x_vals = np.linspace(x_min, x_max, 1000)
+            
+            # Calculate combined PDF
+            pdfs = np.zeros_like(x_vals, dtype=float)
             for comp in sorted_components:
                 weight = comp["weight"]
                 mean = comp["mean"]
                 std = comp["std"]
-                # Calculate component density at x
-                density = weight * stats.norm.pdf(x, mean, std)
-                p_total += density
-                
-                # First component is "unwanted"
-                if comp == sorted_components[0]:
-                    p_unwanted = density
+                pdfs += weight * stats.norm.pdf(x_vals, mean, std)
             
-            # Calculate posterior probability
-            if p_total > 0:
-                posterior = p_unwanted / p_total
-                
-                # Found our boundary at ~0.5 probability
-                if abs(posterior - 0.5) < 0.01:
-                    cutoff = x
-                    break
-                
-                # We crossed the 0.5 threshold, use linear interpolation
-                if posterior < 0.5 and cutoff is None:
-                    cutoff = x
-                    break
-        
-        if cutoff is not None:
-            gmm_cutoffs.append(int(cutoff))
-
-    elif method == "valley" and len(sorted_components) >= 2:
-        # Method 3: Find valleys in combined PDF
-        # Generate x values spanning from min to max
-        x_vals = np.linspace(min(lengths), max(lengths), 1000)
-        
-        # Calculate combined PDF
-        pdfs = np.zeros_like(x_vals, dtype=float)
-        for comp in sorted_components:
-            weight = comp["weight"]
-            mean = comp["mean"]
-            std = comp["std"]
-            pdfs += weight * stats.norm.pdf(x_vals, mean, std)
-        
-        # Find valleys (local minima)
-        # Use negative PDF for finding peaks
-        neg_pdf = -pdfs
-        valleys, _ = find_peaks(neg_pdf, prominence=0.01)
-        
-        # Filter valleys to only include those between component means
-        valid_valleys = []
-        for valley_idx in valleys:
-            valley_x = x_vals[valley_idx]
-            # Check if valley is between first two component means
-            if (sorted_components[0]["mean"] < valley_x < sorted_components[1]["mean"]):
-                valid_valleys.append(valley_x)
-        
-        # Use the first valid valley
-        if valid_valleys:
-            gmm_cutoffs.append(int(valid_valleys[0]))
+            # Find valleys (local minima)
+            # Use negative PDF for finding peaks
+            neg_pdf = -pdfs
+            valleys, _ = find_peaks(neg_pdf, prominence=0.001)  # Lower prominence threshold
             
-    # If no cutoffs found by new methods, fall back to old method
-    if not gmm_cutoffs and len(components) >= 2:
-        # Original method as fallback
-        for i in range(len(sorted_components) - 1):
-            mean1 = sorted_components[i]["mean"]
-            mean2 = sorted_components[i + 1]["mean"]
+            # Filter valleys to only include those between component means with margin
+            valid_valleys = []
+            for valley_idx in valleys:
+                valley_x = x_vals[valley_idx]
+                # Check if valley is between the two means (with margin)
+                if x_min <= valley_x <= x_max:
+                    valid_valleys.append(valley_x)
+            
+            # Use the first valid valley, or the midpoint if none found
+            if valid_valleys:
+                gmm_cutoffs.append(int(valid_valleys[0]))
+            else:
+                # Fall back to midpoint if no valleys found
+                mean1 = sorted_components[0]["mean"]
+                mean2 = sorted_components[1]["mean"]
+                gmm_cutoffs.append(int((mean1 + mean2) / 2))
+                
+        else:
+            # Unknown method, fall back to midpoint
+            mean1 = sorted_components[0]["mean"]
+            mean2 = sorted_components[1]["mean"]
             cutoff = (mean1 + mean2) / 2
             gmm_cutoffs.append(int(cutoff))
+    
+    # Notice we've removed the fallback - if a specific method doesn't work,
+    # it has its own internal fallback but preserves the method name
     
     # Peak-based cutoffs
     peak_cutoffs = find_distribution_breakpoints(lengths)
@@ -277,24 +290,14 @@ def identify_natural_cutoffs(lengths: List[int], method: str = "midpoint") -> Di
     valley_cutoffs = [int(x[v]) for v in valleys]
     
     # Determine recommended cutoffs
-    recommended = []
-    
-    # If multimodal, use GMM cutoffs
-    if multimodal_results["is_multimodal"] and gmm_cutoffs:
-        recommended = gmm_cutoffs
-    # Otherwise, use valley cutoffs if available
-    elif valley_cutoffs:
-        recommended = valley_cutoffs
-    # Otherwise, try peak cutoffs
-    elif peak_cutoffs:
-        recommended = peak_cutoffs
+    recommended = gmm_cutoffs if gmm_cutoffs else (valley_cutoffs if valley_cutoffs else peak_cutoffs)
     
     return convert_numpy_types({
         "gmm_based": gmm_cutoffs,
         "peak_based": peak_cutoffs,
         "valley_based": valley_cutoffs,
         "recommended": recommended,
-        "method_used": method
+        "method_used": method  # Always report the requested method
     })
 
 

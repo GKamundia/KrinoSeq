@@ -306,6 +306,8 @@ def apply_optimal_filter_with_details(
     elif method == "natural":
         # Get GMM method parameter
         gmm_method = kwargs.get("gmm_method", "midpoint")
+        # Add debug output
+        print(f"Natural breakpoint filter using method: {gmm_method}")
         
         # Use natural breakpoints with specified method
         breakpoints = identify_natural_cutoffs(lengths, method=gmm_method)

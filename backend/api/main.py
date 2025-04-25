@@ -191,6 +191,11 @@ async def configure_filter(job_id: str, config: FilterPipelineConfig):
         }
         pipeline_config.append(stage_dict)
     
+    # Add debugging to verify the configuration
+    for stage in pipeline_config:
+        if stage["method"] == "natural" and "gmm_method" in stage["params"]:
+            print(f"Natural breakpoint configured with method: {stage['params']['gmm_method']}")
+    
     # Validate the configuration
     is_valid, error_message, validated_config = validate_pipeline_config(pipeline_config)
     
@@ -316,7 +321,22 @@ async def get_filter_results(job_id: str):
         filtering_process = []
         if "summary" in results and "pipeline_report" in results["summary"]:
             if "stages" in results["summary"]["pipeline_report"]:
-                filtering_process = results["summary"]["pipeline_report"]["stages"]
+                # Extract the stages
+                pipeline_stages = results["summary"]["pipeline_report"]["stages"]
+                
+                # For each stage, ensure we preserve the GMM method
+                for stage in pipeline_stages:
+                    if stage["method"] == "natural" and "process_details" in stage:
+                        if "natural_breakpoint_details" in stage["process_details"]:
+                            details = stage["process_details"]["natural_breakpoint_details"]
+                            
+                            # Make sure the original method is used, not the default
+                            if "method_used" in details:
+                                stage["method_used"] = details["method_used"]
+                                # Add this line to preserve the method throughout the pipeline
+                                print(f"Preserving GMM method: {details['method_used']}")
+                
+                filtering_process = pipeline_stages
         
         return FilterResultResponse(
             job_id=job_id,

@@ -26,6 +26,7 @@ class FilterParams(BaseModel):
     min_cutoff: Optional[int] = None
     max_cutoff: Optional[int] = None
     step: Optional[int] = None
+    gmm_method: Optional[str] = None  # Add this line
 
 
 class FilterStageConfig(BaseModel):

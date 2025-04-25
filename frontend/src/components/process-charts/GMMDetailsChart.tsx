@@ -160,7 +160,7 @@ const GMMDetailsChart: React.FC<GMMDetailsChartProps> = ({ details }) => {
               </Typography>
               
               <Stack spacing={1}>
-                {details.components?.map((component: any, index: number) => (
+                {details.sorted_components?.map((component: any, index: number) => (
                   <Box key={`comp-details-${index}`} sx={{ p: 1, border: '1px solid #e0e0e0', borderRadius: 1 }}>
                     <Typography variant="body2">
                       <strong>Component {index + 1}:</strong> Weight: {(component.weight * 100).toFixed(1)}%
@@ -187,6 +187,28 @@ const GMMDetailsChart: React.FC<GMMDetailsChartProps> = ({ details }) => {
                   <Chip label={`Valley Cutoffs: ${details.valley_cutoffs.length}`} color="success" size="small" />
                 )}
               </Stack>
+
+              <Typography variant="subtitle2" gutterBottom sx={{ mt: 3 }}>
+                Method Diagnostic Information
+              </Typography>
+
+              <Box sx={{ mt: 1 }}>
+                <Typography variant="body2">
+                  <strong>Method Used:</strong> {details.method_used || 'midpoint'}
+                </Typography>
+                <Typography variant="body2">
+                  <strong>GMM Cutoffs:</strong> {details.gmm_cutoffs?.map((c: number) => c.toLocaleString()).join(', ') || 'None'}
+                </Typography>
+                <Typography variant="body2">
+                  <strong>Valley Cutoffs:</strong> {details.valley_cutoffs?.map((c: number) => c.toLocaleString()).join(', ') || 'None'} 
+                </Typography>
+                <Typography variant="body2">
+                  <strong>Peak Cutoffs:</strong> {details.peak_cutoffs?.map((c: number) => c.toLocaleString()).join(', ') || 'None'}
+                </Typography>
+                <Typography variant="body2">
+                  <strong>Recommended Cutoffs:</strong> {details.recommended_cutoffs?.map((c: number) => c.toLocaleString()).join(', ') || 'None'}
+                </Typography>
+              </Box>
             </Box>
           </Paper>
         </Grid>

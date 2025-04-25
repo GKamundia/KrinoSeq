@@ -86,7 +86,7 @@ def validate_filter_config(method: str, params: Dict[str, Any]) -> Tuple[bool, O
 
 def validate_pipeline_config(config: List[Dict[str, Any]]) -> Tuple[bool, Optional[str], List[Dict[str, Any]]]:
     """
-    Validate a complete filter pipeline configuration.
+    Validate the pipeline configuration.
     
     Args:
         config: List of filter stage configurations
@@ -94,26 +94,106 @@ def validate_pipeline_config(config: List[Dict[str, Any]]) -> Tuple[bool, Option
     Returns:
         Tuple of (is_valid, error_message, validated_config)
     """
-    if not isinstance(config, list):
-        return False, "Pipeline configuration must be a list", []
-    
     validated_config = []
     
-    for i, stage_config in enumerate(config):
-        if not isinstance(stage_config, dict):
-            return False, f"Stage {i} configuration must be a dictionary", []
+    if not config:
+        return False, "Configuration cannot be empty", []
+    
+    allowed_methods = ["min_max", "iqr", "zscore", "adaptive", "n50_optimize", "natural"]
+    
+    for stage in config:
+        # Check method existence and validity
+        if "method" not in stage:
+            return False, "Method must be specified for each stage", []
+            
+        method = stage["method"]
+        if method not in allowed_methods:
+            return False, f"Invalid method: {method}", []
         
-        if "method" not in stage_config:
-            return False, f"Stage {i} is missing the required 'method' field", []
+        # Check and validate parameters
+        params = stage.get("params", {})
+        validated_params = {}
         
-        method = stage_config["method"]
-        params = stage_config.get("params", {})
-        
-        is_valid, error, validated_params = validate_filter_config(method, params)
-        if not is_valid:
-            return False, f"Stage {i}: {error}", []
-        
-        validated_config.append({"method": method, "params": validated_params})
+        # Method-specific validation
+        if method == "min_max":
+            # Validate min/max length parameters
+            if "min_length" in params:
+                try:
+                    validated_params["min_length"] = int(params["min_length"])
+                    if validated_params["min_length"] < 0:
+                        return False, "min_length cannot be negative", []
+                except (ValueError, TypeError):
+                    return False, "min_length must be an integer", []
+                    
+            if "max_length" in params:
+                try:
+                    validated_params["max_length"] = int(params["max_length"])
+                    if validated_params["max_length"] < 0:
+                        return False, "max_length cannot be negative", []
+                except (ValueError, TypeError):
+                    return False, "max_length must be an integer", []
+                    
+            if "min_length" in validated_params and "max_length" in validated_params:
+                if validated_params["min_length"] > validated_params["max_length"]:
+                    return False, "min_length cannot be greater than max_length", []
+                    
+        elif method == "iqr":
+            # Validate IQR multiplier
+            if "k" in params:
+                try:
+                    validated_params["k"] = float(params["k"])
+                    if validated_params["k"] <= 0:
+                        return False, "k must be positive", []
+                except (ValueError, TypeError):
+                    return False, "k must be a number", []
+            else:
+                validated_params["k"] = 1.5  # Default value
+                
+        elif method == "zscore":
+            # Validate z-score threshold
+            if "threshold" in params:
+                try:
+                    validated_params["threshold"] = float(params["threshold"])
+                    if validated_params["threshold"] <= 0:
+                        return False, "threshold must be positive", []
+                except (ValueError, TypeError):
+                    return False, "threshold must be a number", []
+            else:
+                validated_params["threshold"] = 2.5  # Default value
+                
+        elif method == "natural":
+            # Validate GMM method
+            if "gmm_method" in params:
+                gmm_method = params["gmm_method"]
+                # ADD THIS - explicitly define the allowed GMM methods
+                allowed_gmm_methods = ["midpoint", "intersection", "probability", "valley"]
+                if gmm_method not in allowed_gmm_methods:
+                    return False, f"Invalid GMM method: {gmm_method}. Must be one of {allowed_gmm_methods}", []
+                validated_params["gmm_method"] = gmm_method
+            else:
+                validated_params["gmm_method"] = "midpoint"  # Default value
+                
+        elif method == "n50_optimize":
+            # Validate N50 optimization parameters
+            for param_name, param_type in [("min_cutoff", int), ("max_cutoff", int), ("step", int)]:
+                if param_name in params:
+                    try:
+                        value = param_type(params[param_name])
+                        if value <= 0:
+                            return False, f"{param_name} must be positive", []
+                        validated_params[param_name] = value
+                    except (ValueError, TypeError):
+                        return False, f"{param_name} must be a {param_type.__name__}", []
+            
+            if "min_cutoff" in validated_params and "max_cutoff" in validated_params:
+                if validated_params["min_cutoff"] >= validated_params["max_cutoff"]:
+                    return False, "min_cutoff must be less than max_cutoff", []
+                    
+        # Add the validated stage to the config
+        validated_config.append({
+            "method": method,
+            "params": validated_params
+        })
     
     return True, None, validated_config
 
