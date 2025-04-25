@@ -61,12 +61,13 @@ def detect_multimodality(lengths: List[int], max_components: int = 5) -> Dict[st
                 "std": std
             })
     
-    return {
-        "is_multimodal": optimal_components > 1,
-        "optimal_components": optimal_components,
-        "bic_scores": bic_scores,
+    result = {
+        "is_multimodal": bool(optimal_components > 1),
+        "optimal_components": int(optimal_components),
+        "bic_scores": [float(score) for score in bic_scores],
         "components": components
     }
+    return convert_numpy_types(result)
 
 
 def find_distribution_breakpoints(lengths: List[int], 
@@ -103,12 +104,17 @@ def find_distribution_breakpoints(lengths: List[int],
     return sorted(breakpoints)
 
 
-def identify_natural_cutoffs(lengths: List[int]) -> Dict[str, List[int]]:
+def identify_natural_cutoffs(lengths: List[int], method: str = "midpoint") -> Dict[str, List[int]]:
     """
     Identify natural cutoff points based on distribution analysis.
     
     Args:
         lengths: List of sequence lengths
+        method: Method for determining cutoffs:
+               - "midpoint": Simple midpoint between first two sorted components (Method 1a)
+               - "intersection": Intersection point between first two components (Method 1b)
+               - "probability": Cutoff based on probability assignment (Method 2)
+               - "valley": Find valleys in combined PDF (Method 3)
         
     Returns:
         Dictionary with different recommended cutoffs
@@ -127,16 +133,135 @@ def identify_natural_cutoffs(lengths: List[int]) -> Dict[str, List[int]]:
     # GMM-based cutoffs
     gmm_cutoffs = []
     components = multimodal_results.get("components", [])
-    for i in range(len(components) - 1):
-        # Find intersection between adjacent components
-        mean1 = components[i]["mean"]
-        std1 = components[i]["std"]
-        mean2 = components[i + 1]["mean"]
-        std2 = components[i + 1]["std"]
-        
-        # Simplified intersection point
+    
+    # Sort components by mean
+    sorted_components = sorted(components, key=lambda c: c["mean"])
+    
+    # Calculate cutoffs based on specified method
+    if method == "midpoint" and len(sorted_components) >= 2:
+        # Method 1a: Simple midpoint between first two sorted components
+        mean1 = sorted_components[0]["mean"]
+        mean2 = sorted_components[1]["mean"]
         cutoff = (mean1 + mean2) / 2
         gmm_cutoffs.append(int(cutoff))
+
+    elif method == "intersection" and len(sorted_components) >= 2:
+        # Method 1b: Find intersection point between components
+        comp1 = sorted_components[0]
+        comp2 = sorted_components[1]
+        mean1, std1, weight1 = comp1["mean"], comp1["std"], comp1["weight"]
+        mean2, std2, weight2 = comp2["mean"], comp2["std"], comp2["weight"]
+
+        if std1 == std2:
+            # With equal std, intersection is midpoint
+            cutoff = (mean1 + mean2) / 2
+        else:
+            # Solve quadratic equation for intersection point
+            a = 1/(2*std2**2) - 1/(2*std1**2)
+            b = mean1/std1**2 - mean2/std2**2
+            c = mean2**2/(2*std2**2) - mean1**2/(2*std1**2) + np.log((weight2*std1)/(weight1*std2))
+
+            # Solve for roots using quadratic formula
+            discriminant = b**2 - 4*a*c
+            if discriminant < 0:
+                # No real solution, use midpoint as fallback
+                cutoff = (mean1 + mean2) / 2
+            else:
+                # Find the root between the two means
+                sol1 = (-b + np.sqrt(discriminant))/(2*a)
+                sol2 = (-b - np.sqrt(discriminant))/(2*a)
+                
+                # Choose the solution between the means
+                if min(mean1, mean2) <= sol1 <= max(mean1, mean2):
+                    cutoff = sol1
+                elif min(mean1, mean2) <= sol2 <= max(mean1, mean2):
+                    cutoff = sol2
+                else:
+                    # Fallback to midpoint if solutions are outside mean range
+                    cutoff = (mean1 + mean2) / 2
+
+        gmm_cutoffs.append(int(cutoff))
+
+    elif method == "probability" and len(sorted_components) >= 2:
+        # Method 2: Find cutoff based on probability assignment
+        # Define first component as unwanted, rest as wanted
+        x_vals = np.linspace(sorted_components[0]["mean"],
+                             sorted_components[1]["mean"],
+                             num=1000)
+        
+        # Find where posterior probability = 0.5
+        cutoff = None
+        for x in x_vals:
+            p_unwanted = 0
+            p_total = 0
+            
+            for comp in sorted_components:
+                weight = comp["weight"]
+                mean = comp["mean"]
+                std = comp["std"]
+                # Calculate component density at x
+                density = weight * stats.norm.pdf(x, mean, std)
+                p_total += density
+                
+                # First component is "unwanted"
+                if comp == sorted_components[0]:
+                    p_unwanted = density
+            
+            # Calculate posterior probability
+            if p_total > 0:
+                posterior = p_unwanted / p_total
+                
+                # Found our boundary at ~0.5 probability
+                if abs(posterior - 0.5) < 0.01:
+                    cutoff = x
+                    break
+                
+                # We crossed the 0.5 threshold, use linear interpolation
+                if posterior < 0.5 and cutoff is None:
+                    cutoff = x
+                    break
+        
+        if cutoff is not None:
+            gmm_cutoffs.append(int(cutoff))
+
+    elif method == "valley" and len(sorted_components) >= 2:
+        # Method 3: Find valleys in combined PDF
+        # Generate x values spanning from min to max
+        x_vals = np.linspace(min(lengths), max(lengths), 1000)
+        
+        # Calculate combined PDF
+        pdfs = np.zeros_like(x_vals, dtype=float)
+        for comp in sorted_components:
+            weight = comp["weight"]
+            mean = comp["mean"]
+            std = comp["std"]
+            pdfs += weight * stats.norm.pdf(x_vals, mean, std)
+        
+        # Find valleys (local minima)
+        # Use negative PDF for finding peaks
+        neg_pdf = -pdfs
+        valleys, _ = find_peaks(neg_pdf, prominence=0.01)
+        
+        # Filter valleys to only include those between component means
+        valid_valleys = []
+        for valley_idx in valleys:
+            valley_x = x_vals[valley_idx]
+            # Check if valley is between first two component means
+            if (sorted_components[0]["mean"] < valley_x < sorted_components[1]["mean"]):
+                valid_valleys.append(valley_x)
+        
+        # Use the first valid valley
+        if valid_valleys:
+            gmm_cutoffs.append(int(valid_valleys[0]))
+            
+    # If no cutoffs found by new methods, fall back to old method
+    if not gmm_cutoffs and len(components) >= 2:
+        # Original method as fallback
+        for i in range(len(sorted_components) - 1):
+            mean1 = sorted_components[i]["mean"]
+            mean2 = sorted_components[i + 1]["mean"]
+            cutoff = (mean1 + mean2) / 2
+            gmm_cutoffs.append(int(cutoff))
     
     # Peak-based cutoffs
     peak_cutoffs = find_distribution_breakpoints(lengths)
@@ -164,12 +289,13 @@ def identify_natural_cutoffs(lengths: List[int]) -> Dict[str, List[int]]:
     elif peak_cutoffs:
         recommended = peak_cutoffs
     
-    return {
+    return convert_numpy_types({
         "gmm_based": gmm_cutoffs,
         "peak_based": peak_cutoffs,
         "valley_based": valley_cutoffs,
-        "recommended": recommended
-    }
+        "recommended": recommended,
+        "method_used": method
+    })
 
 
 def detect_outliers_zscore(lengths: List[int], threshold: float = 3.0) -> Tuple[List[int], List[int]]:
@@ -224,3 +350,23 @@ def detect_outliers_combined(lengths: List[int]) -> Tuple[List[int], List[int]]:
     upper_outliers = list(set(iqr_upper).intersection(set(zscore_upper)))
     
     return (lower_outliers, upper_outliers)
+
+
+def convert_numpy_types(obj):
+    """Convert NumPy types to Python native types for JSON serialization."""
+    import numpy as np
+    
+    if isinstance(obj, np.integer):
+        return int(obj)
+    elif isinstance(obj, np.floating):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, np.bool_):
+        return bool(obj)
+    elif isinstance(obj, dict):
+        return {key: convert_numpy_types(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_numpy_types(item) for item in obj]
+    else:
+        return obj

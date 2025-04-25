@@ -24,6 +24,7 @@ export interface FilterParams {
   min_cutoff?: number;
   max_cutoff?: number;
   step?: number;
+  gmm_method?: string;  // Added this line for GMM method selection
 }
 
 export interface FilterStageConfig {

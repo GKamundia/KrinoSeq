@@ -137,7 +137,32 @@ const FilterMethodSelector: React.FC = () => {
           </Grid>
         );
         
-      // ADAPTIVE and NATURAL don't have parameters
+      case FilterMethod.NATURAL:
+        return (
+          <Grid container spacing={2}>
+            <Grid item xs={12}>
+              <FormControl fullWidth>
+                <InputLabel id={`gmm-method-label-${index}`}>GMM Cutoff Method</InputLabel>
+                <Select
+                  labelId={`gmm-method-label-${index}`}
+                  name={`stages.${index}.params.gmm_method`}
+                  value={values.stages[index].params?.gmm_method || 'midpoint'}
+                  label="GMM Cutoff Method"
+                  onChange={handleChange}
+                >
+                  <MenuItem value="midpoint">Midpoint between components (Simple)</MenuItem>
+                  <MenuItem value="intersection">Intersection point (Weighted)</MenuItem>
+                  <MenuItem value="probability">Probability assignment (0.5 threshold)</MenuItem>
+                  <MenuItem value="valley">Valley finding (PDF local minima)</MenuItem>
+                </Select>
+                <FormHelperText>
+                  Select the method used to determine the cutoff point between components
+                </FormHelperText>
+              </FormControl>
+            </Grid>
+          </Grid>
+        );
+        
       default:
         return (
           <Typography variant="body2" color="text.secondary">

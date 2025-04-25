@@ -304,13 +304,16 @@ def apply_optimal_filter_with_details(
         return filtered, process_details
         
     elif method == "natural":
-        # Get GMM and natural breakpoint details
-        multimodality_results = detect_multimodality(lengths)
-        breakpoints = identify_natural_cutoffs(lengths)
+        # Get GMM method parameter
+        gmm_method = kwargs.get("gmm_method", "midpoint")
+        
+        # Use natural breakpoints with specified method
+        breakpoints = identify_natural_cutoffs(lengths, method=gmm_method)
         
         # Gather GMM components information
+        multimodal_results = detect_multimodality(lengths)
         components = []
-        for i, comp in enumerate(multimodality_results["components"]):
+        for i, comp in enumerate(multimodal_results["components"]):
             components.append({
                 "index": i,
                 "weight": comp["weight"],
@@ -318,11 +321,14 @@ def apply_optimal_filter_with_details(
                 "std": comp["std"]
             })
         
+        # Add sorted components for visibility in the frontend
+        sorted_components = sorted(components, key=lambda c: c["mean"])
+        
         # Generate visualization data for GMM components
         x = np.linspace(min(lengths), max(lengths), 1000) if lengths else np.linspace(0, 1, 100)
         component_curves = []
         
-        for comp in multimodality_results["components"]:
+        for comp in multimodal_results["components"]:
             weight = comp["weight"]
             mean = comp["mean"]
             std = comp["std"]
@@ -335,17 +341,31 @@ def apply_optimal_filter_with_details(
                 "weight": weight
             })
         
+        # Calculate the combined PDF
+        combined_curve = np.zeros_like(x)
+        for comp in multimodal_results["components"]:
+            weight = comp["weight"]
+            mean = comp["mean"]
+            std = comp["std"]
+            combined_curve += weight * stats.norm.pdf(x, mean, std)
+        
         process_details["natural_breakpoint_details"] = {
-            "is_multimodal": multimodality_results["is_multimodal"],
-            "optimal_components": multimodality_results["optimal_components"],
-            "bic_scores": multimodality_results["bic_scores"],
+            "is_multimodal": multimodal_results["is_multimodal"],
+            "optimal_components": multimodal_results["optimal_components"],
+            "bic_scores": multimodal_results["bic_scores"],
             "components": components,
+            "sorted_components": sorted_components,  # Add sorted components
             "component_curves": component_curves,
+            "combined_curve": {
+                "x": x.tolist(),
+                "y": combined_curve.tolist()
+            },
             "gmm_cutoffs": breakpoints["gmm_based"],
             "peak_cutoffs": breakpoints["peak_based"],
             "valley_cutoffs": breakpoints["valley_based"],
             "recommended_cutoffs": breakpoints["recommended"],
             "selected_cutoff": breakpoints["recommended"][0] if breakpoints["recommended"] else None,
+            "method_used": gmm_method,  # Add the method used
             "histogram": generate_histogram_data(lengths)
         }
         

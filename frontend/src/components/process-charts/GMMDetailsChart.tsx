@@ -151,6 +151,9 @@ const GMMDetailsChart: React.FC<GMMDetailsChartProps> = ({ details }) => {
               <Typography variant="body2" gutterBottom>
                 <strong>Selected Cutoff:</strong> {details.selected_cutoff?.toLocaleString() || 'None'} bp
               </Typography>
+              <Typography variant="body2" gutterBottom>
+                <strong>Cutoff Method:</strong> {details.method_used || 'midpoint'}
+              </Typography>
               
               <Typography variant="subtitle2" gutterBottom sx={{ mt: 3 }}>
                 Component Details
