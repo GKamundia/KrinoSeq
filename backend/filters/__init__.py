@@ -79,8 +79,9 @@ def apply_optimal_filter(seq_lengths: Dict[str, int],
         return filter_by_length(seq_lengths, min_length=optimal_cutoff)
     
     elif method == "natural":
-        # Use natural breakpoints
-        cutoffs = identify_natural_cutoffs(lengths)["recommended"]
+        # Use natural breakpoints with the specific GMM method
+        gmm_method = kwargs.get("gmm_method", "midpoint")
+        cutoffs = identify_natural_cutoffs(lengths, method=gmm_method)["recommended"]
         if not cutoffs:
             return seq_lengths  # No natural cutoffs found
         

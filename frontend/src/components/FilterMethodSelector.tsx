@@ -156,7 +156,13 @@ const FilterMethodSelector: React.FC = () => {
                   <MenuItem value="valley">Valley finding (PDF local minima)</MenuItem>
                 </Select>
                 <FormHelperText>
-                  Select the method used to determine the cutoff point between components
+                  Select the method used to determine the cutoff point between components:
+                  <ul>
+                    <li><strong>Midpoint</strong>: Simple average between means</li>
+                    <li><strong>Intersection</strong>: Finds where weighted PDFs intersect</li>
+                    <li><strong>Probability</strong>: Point where posterior P(comp1|x) = 0.5</li>
+                    <li><strong>Valley</strong>: The local minimum in the combined density</li>
+                  </ul>
                 </FormHelperText>
               </FormControl>
             </Grid>
