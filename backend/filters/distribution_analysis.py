@@ -197,173 +197,151 @@ def find_distribution_breakpoints(lengths: List[int],
     return sorted(breakpoints)
 
 
-def identify_natural_cutoffs(lengths: List[int], method: str = "midpoint") -> Dict[str, List[int]]:
+def identify_natural_cutoffs(lengths: List[int], method: str = "midpoint",
+                            transform_type: str = "box-cox", 
+                            component_method: str = "bic") -> Dict[str, Any]:
     """
-    Identify natural cutoff points based on distribution analysis using 
-    mathematically sound GMM valley detection across all component pairs.
+    Identify natural cutoff points with data transformation and improved component selection.
     """
-    # Debug output to confirm the method being used
-    print(f"Natural breakpoint method called with: {method}")
+    print(f"Natural breakpoint with: method={method}, transform={transform_type}, component={component_method}")
     
     if not lengths:
         return {
             "gmm_based": [],
-            "peak_based": [],
-            "valley_based": [],
             "recommended": [],
-            "method_used": method
+            "method_used": method,
+            "transform_params": {"type": "none"}
         }
     
-    # Get multimodality analysis
-    multimodal_results = detect_multimodality(lengths)
+    # Get multimodality analysis with transformation
+    multimodal_results = detect_multimodality(
+        lengths, 
+        transform_type=transform_type,
+        component_method=component_method
+    )
     
-    # GMM-based cutoffs
-    gmm_cutoffs = []
+    transform_params = multimodal_results.get("transform_params", {"type": "none"})
     components = multimodal_results.get("components", [])
     
-    # Sort components by mean - THIS IS IMPORTANT
-    sorted_components = sorted(components, key=lambda c: c["mean"])
+    # If we have fewer than 2 components, we can't calculate a cutoff
+    if len(components) < 2:
+        print("Insufficient components to calculate cutoff")
+        return {
+            "gmm_based": [],
+            "recommended": [],
+            "method_used": method,
+            "transform_params": transform_params,
+            "component_count": len(components)
+        }
     
-    # IMPROVED APPROACH: Calculate cutoff candidates between ALL adjacent component pairs
-    cutoff_candidates = []
-    cutoff_densities = []
-    cutoff_methods = []  # Track which method produced each cutoff
+    # Focus on the first two components for cutoff calculation
+    comp1 = components[0]
+    comp2 = components[1]
+    mean1, std1, weight1 = comp1["mean"], comp1["std"], comp1["weight"]
+    mean2, std2, weight2 = comp2["mean"], comp2["std"], comp2["weight"]
     
-    if len(sorted_components) >= 2:
-        for i in range(len(sorted_components)-1):
-            comp1 = sorted_components[i]
-            comp2 = sorted_components[i+1]
-            mean1, std1, weight1 = comp1["mean"], comp1["std"], comp1["weight"]
-            mean2, std2, weight2 = comp2["mean"], comp2["std"], comp2["weight"]
-            
-            # Calculate cutoff point based on selected method
-            cutoff = None
-            used_method = method  # Track the actual method used (including fallbacks)
-            
-            if method == "midpoint":
-                # Simple midpoint between means
-                cutoff = (mean1 + mean2) / 2
-            
-            elif method == "intersection":
-                # Find intersection point of the weighted component densities
-                if std1 == std2:
-                    # With equal std, intersection is midpoint
+    # Calculate cutoff in transformed space using selected method
+    cutoff = None
+    
+    if method == "midpoint":
+        cutoff = (mean1 + mean2) / 2
+    
+    elif method == "intersection":
+        if std1 == std2:
+            cutoff = (mean1 + mean2) / 2
+        else:
+            try:
+                a = 1/(2*std2**2) - 1/(2*std1**2)
+                b = mean1/std1**2 - mean2/std2**2
+                c = mean2**2/(2*std2**2) - mean1**2/(2*std1**2) + np.log((weight2*std1)/(weight1*std2))
+
+                discriminant = b**2 - 4*a*c
+                if discriminant < 0:
                     cutoff = (mean1 + mean2) / 2
                 else:
-                    # Solve quadratic equation for intersection
-                    try:
-                        a = 1/(2*std2**2) - 1/(2*std1**2)
-                        b = mean1/std1**2 - mean2/std2**2
-                        c = mean2**2/(2*std2**2) - mean1**2/(2*std1**2) + np.log((weight2*std1)/(weight1*std2))
-
-                        # Solve for roots
-                        discriminant = b**2 - 4*a*c
-                        if discriminant < 0:
-                            # No real solution, use midpoint but keep method as intersection
-                            cutoff = (mean1 + mean2) / 2
-                        else:
-                            # Find the root between the means
-                            sol1 = (-b + np.sqrt(discriminant))/(2*a)
-                            sol2 = (-b - np.sqrt(discriminant))/(2*a)
-                            
-                            # Choose solution between means
-                            if min(mean1, mean2) <= sol1 <= max(mean1, mean2):
-                                cutoff = sol1
-                            elif min(mean1, mean2) <= sol2 <= max(mean1, mean2):
-                                cutoff = sol2
-                            else:
-                                # Fallback to midpoint but keep method as intersection
-                                cutoff = (mean1 + mean2) / 2
-                    except Exception as e:
-                        # Log error for debugging
-                        print(f"Error calculating intersection: {str(e)}")
-                        # Error in calculation, use midpoint but keep method as intersection
-                        cutoff = (mean1 + mean2) / 2
-            
-            elif method == "probability":
-                # Find where posterior probability = 0.5
-                x_vals = np.linspace(mean1, mean2, 1000)
-                found_cutoff = False
-                
-                for x in x_vals:
-                    p_comp1 = weight1 * stats.norm.pdf(x, mean1, std1)
-                    p_comp2 = weight2 * stats.norm.pdf(x, mean2, std2)
+                    sol1 = (-b + np.sqrt(discriminant))/(2*a)
+                    sol2 = (-b - np.sqrt(discriminant))/(2*a)
                     
-                    if p_comp1 <= p_comp2:  # Crossing point where P(comp1|x) = 0.5
-                        cutoff = x
-                        found_cutoff = True
-                        break
-                
-                # If no cutoff found, use midpoint but keep method as probability
-                if not found_cutoff:
-                    cutoff = (mean1 + mean2) / 2
-            
-            elif method == "valley":
-                # Find valley in the combined PDF of these two components
-                x_vals = np.linspace(mean1, mean2, 1000)
-                pdfs = np.zeros_like(x_vals, dtype=float)
-                
-                # Calculate density from just these two components
-                pdfs += weight1 * stats.norm.pdf(x_vals, mean1, std1)
-                pdfs += weight2 * stats.norm.pdf(x_vals, mean2, std2)
-                
-                # Find minimum of the combined density
-                min_idx = np.argmin(pdfs)
-                cutoff = x_vals[min_idx]
-            
-            else:
-                # Unknown method, use midpoint
+                    if min(mean1, mean2) <= sol1 <= max(mean1, mean2):
+                        cutoff = sol1
+                    elif min(mean1, mean2) <= sol2 <= max(mean1, mean2):
+                        cutoff = sol2
+                    else:
+                        cutoff = (mean1 + mean2) / 2
+            except Exception as e:
+                print(f"Error calculating intersection: {str(e)}")
                 cutoff = (mean1 + mean2) / 2
-                used_method = "midpoint"  # Mark actual method used as midpoint
+    
+    elif method == "probability":
+        x_vals = np.linspace(mean1, mean2, 1000)
+        for x in x_vals:
+            p_comp1 = weight1 * stats.norm.pdf(x, mean1, std1)
+            p_comp2 = weight2 * stats.norm.pdf(x, mean2, std2)
             
-            if cutoff is not None:
-                cutoff_candidates.append(cutoff)
-                cutoff_methods.append(used_method)
-                
-                # CRITICAL IMPROVEMENT: Calculate full mixture density at this cutoff point
-                mixture_density = 0
-                for comp in sorted_components:  # Use ALL components
-                    w, m, s = comp["weight"], comp["mean"], comp["std"]
-                    mixture_density += w * stats.norm.pdf(cutoff, m, s)
-                
-                cutoff_densities.append(mixture_density)
+            if p_comp1 <= p_comp2:
+                cutoff = x
+                break
+        
+        if cutoff is None:
+            cutoff = (mean1 + mean2) / 2
     
-    # CRITICAL IMPROVEMENT: Select the cutoff with the deepest valley (minimum density)
-    if cutoff_candidates:
-        if len(cutoff_candidates) == 1:
-            # Only one candidate, use it
-            gmm_cutoffs = [int(cutoff_candidates[0])]
-        else:
-            # Sort candidates by their mixture density (ascending)
-            sorted_indices = np.argsort(cutoff_densities)
-            
-            # Select all cutoffs, sorted from deepest to shallowest valley
-            gmm_cutoffs = [int(cutoff_candidates[i]) for i in sorted_indices]
+    elif method == "valley":
+        x_vals = np.linspace(mean1, mean2, 1000)
+        pdfs = (weight1 * stats.norm.pdf(x_vals, mean1, std1) + 
+                weight2 * stats.norm.pdf(x_vals, mean2, std2))
+        min_idx = np.argmin(pdfs)
+        cutoff = x_vals[min_idx]
     
-    # Calculate other cutoff types for reference
-    peak_cutoffs = find_distribution_breakpoints(lengths)
+    else:
+        cutoff = (mean1 + mean2) / 2
+        method = "midpoint"
     
-    kde = stats.gaussian_kde(lengths)
-    x = np.linspace(min(lengths), max(lengths), 1000)
-    density = kde(x)
-    neg_density = -density
-    valleys, _ = find_peaks(neg_density, prominence=0.1)
-    valley_cutoffs = [int(x[v]) for v in valleys]
+    # Transform cutoff back to original space
+    if cutoff is not None:
+        original_cutoff = inverse_transform_value(cutoff, transform_params)
+        
+        # Ensure it's a reasonable value for genomic data
+        original_cutoff = max(original_cutoff, 100)  # Minimum reasonable contig length
+        original_cutoff = min(original_cutoff, 5000)  # Maximum reasonable cutoff
+        
+        # Round to nearest integer
+        gmm_cutoffs = [int(round(original_cutoff))]
+        print(f"GMM cutoff (transformed back): {gmm_cutoffs[0]}")
+    else:
+        gmm_cutoffs = []
     
-    # Use GMM cutoffs if available, prioritizing the deepest valley
-    recommended = gmm_cutoffs if gmm_cutoffs else (valley_cutoffs if valley_cutoffs else peak_cutoffs)
+    # Calculate statistics on filtered results
+    if gmm_cutoffs:
+        filtered_lengths = [l for l in lengths if l >= gmm_cutoffs[0]]
+        retained_count = len(filtered_lengths)
+        retained_percent = (retained_count / len(lengths)) * 100
+        retained_bp = sum(filtered_lengths)
+        total_bp = sum(lengths)
+        retained_bp_percent = (retained_bp / total_bp) * 100
+        
+        filtering_stats = {
+            "cutoff": gmm_cutoffs[0],
+            "total_contigs": len(lengths),
+            "retained_contigs": retained_count,
+            "retained_contigs_percent": retained_percent,
+            "total_bp": total_bp,
+            "retained_bp": retained_bp,
+            "retained_bp_percent": retained_bp_percent
+        }
+    else:
+        filtering_stats = {}
     
-    # Print debug info to verify
-    print(f"GMM method {method} produced cutoffs: {gmm_cutoffs}")
-    
-    return convert_numpy_types({
+    result = {
         "gmm_based": gmm_cutoffs,
-        "peak_based": peak_cutoffs,
-        "valley_based": valley_cutoffs,
-        "recommended": recommended,
-        "method_used": method,  # Always return the original requested method
-        "cutoff_densities": cutoff_densities if cutoff_densities else []
-    })
+        "recommended": gmm_cutoffs,
+        "method_used": method,
+        "transform_params": transform_params,
+        "component_count": len(components),
+        "filtering_stats": filtering_stats,
+        "components": components[:5]  # Include the first 5 components for visualization
+    }
+    
+    return convert_numpy_types(result)
 
 
 def detect_outliers_zscore(lengths: List[int], threshold: float = 3.0) -> Tuple[List[int], List[int]]:
