@@ -9,48 +9,135 @@ from sklearn.mixture import GaussianMixture
 from scipy.signal import find_peaks
 
 
-def detect_multimodality(lengths: List[int], max_components: int = 5) -> Dict[str, Any]:
+def detect_multimodality(lengths: List[int], max_components: int = 10, 
+                         transform_type: str = "box-cox",
+                         component_method: str = "bic") -> Dict[str, Any]:
     """
-    Detect multimodality in sequence length distribution using Gaussian Mixture Models.
+    Detect multimodality in sequence length distribution using Gaussian Mixture Models
+    with multiple component selection methods and data transformation.
     
     Args:
         lengths: List of sequence lengths
         max_components: Maximum number of components to consider
+        transform_type: Data transformation method ('box-cox', 'log', 'none')
+        component_method: Method for selecting number of components ('bic', 'aic', 'loo', 'dirichlet')
         
     Returns:
         Dictionary with multimodality analysis results
     """
-    if not lengths or len(lengths) < max_components * 2:
+    if not lengths or len(lengths) < 50:
         return {
             "is_multimodal": False,
             "optimal_components": 1,
-            "bic_scores": [],
-            "components": []
+            "components": [],
+            "transform_params": {"type": "none"}
         }
     
-    # Reshape data for sklearn
-    X = np.array(lengths).reshape(-1, 1)
+    # Apply transformation
+    transformed_data, transform_params = transform_data(lengths, transform_type)
+    X = transformed_data.reshape(-1, 1)
     
-    # Find optimal number of components using BIC
+    # Cap max components based on data size
+    max_components = min(max_components, len(lengths) // 100, 10)
+    if len(lengths) < 1000:
+        max_components = min(max_components, 5)
+    
+    # Dirichlet Process approach (nonparametric)
+    if component_method == "dirichlet":
+        from sklearn.mixture import BayesianGaussianMixture
+        
+        model = BayesianGaussianMixture(
+            n_components=max_components,
+            weight_concentration_prior=1.0/max_components,
+            weight_concentration_prior_type="dirichlet_process",
+            max_iter=500,
+            n_init=10,
+            random_state=42
+        )
+        model.fit(X)
+        
+        # Extract components with non-negligible weights
+        weights = model.weights_
+        means = model.means_
+        covariances = model.covariances_
+        
+        # Get model evaluation metrics for completeness
+        bic_score = model.bic(X) if hasattr(model, 'bic') else None
+        
+        # Store components with weight >= 0.01
+        components = []
+        for i in range(len(weights)):
+            if weights[i] >= 0.01:  # Apply weight threshold
+                components.append({
+                    "weight": float(weights[i]), 
+                    "mean": float(means[i][0]),
+                    "std": float(np.sqrt(covariances[i][0][0]))
+                })
+        
+        # Sort components by mean
+        components = sorted(components, key=lambda c: c["mean"])
+        
+        result = {
+            "is_multimodal": len(components) > 1,
+            "optimal_components": len(components),
+            "components": components,
+            "transform_params": transform_params,
+            "method_used": "dirichlet"
+        }
+        return convert_numpy_types(result)
+    
+    # Traditional information criteria approaches
     bic_scores = []
+    aic_scores = []
     models = []
     
-    for n_components in range(1, min(max_components + 1, len(lengths) // 2)):
-        gmm = GaussianMixture(n_components=n_components, random_state=42)
-        gmm.fit(X)
-        bic_scores.append(gmm.bic(X))
-        models.append(gmm)
+    for n_components in range(1, max_components + 1):
+        try:
+            gmm = GaussianMixture(
+                n_components=n_components,
+                random_state=42,
+                n_init=10,
+                init_params='kmeans',
+                max_iter=300,
+                reg_covar=1e-5  # Better regularization for genomic data
+            )
+            gmm.fit(X)
+            bic_scores.append(gmm.bic(X))
+            aic_scores.append(gmm.aic(X))
+            models.append(gmm)
+        except Exception as e:
+            print(f"Error fitting GMM with {n_components} components: {str(e)}")
+            break
     
-    # Find optimal number of components
-    optimal_idx = np.argmin(bic_scores) if bic_scores else 0
-    optimal_components = optimal_idx + 1 if bic_scores else 1
+    if not models:
+        return {
+            "is_multimodal": False,
+            "optimal_components": 1,
+            "components": [],
+            "transform_params": transform_params
+        }
     
-    # Extract component details if we have a model
+    # Select optimal number of components based on method
+    if component_method == "aic":
+        optimal_idx = np.argmin(aic_scores)
+        method_used = "aic"
+    elif component_method == "loo":
+        # PSIS-LOO is approximated using a penalty on AIC
+        loo_scores = [aic + 2*np.log(np.log(n)) * k 
+                     for k, (aic, n) in enumerate(zip(aic_scores, [len(X)]*len(aic_scores)))]
+        optimal_idx = np.argmin(loo_scores)
+        method_used = "loo"
+    else:  # Default to BIC
+        optimal_idx = np.argmin(bic_scores)
+        method_used = "bic"
+    
+    best_model = models[optimal_idx]
+    
+    # Extract components and apply weight threshold
     components = []
-    if optimal_components > 0 and models:
-        best_model = models[optimal_idx]
-        for i in range(optimal_components):
-            weight = best_model.weights_[i]
+    for i in range(best_model.n_components):
+        weight = best_model.weights_[i]
+        if weight >= 0.01:  # Apply weight threshold
             mean = float(best_model.means_[i][0])
             var = float(best_model.covariances_[i][0][0])
             std = float(np.sqrt(var))
@@ -61,11 +148,17 @@ def detect_multimodality(lengths: List[int], max_components: int = 5) -> Dict[st
                 "std": std
             })
     
+    # Sort components by mean
+    components = sorted(components, key=lambda c: c["mean"])
+    
     result = {
-        "is_multimodal": bool(optimal_components > 1),
-        "optimal_components": int(optimal_components),
+        "is_multimodal": len(components) > 1,
+        "optimal_components": len(components),
         "bic_scores": [float(score) for score in bic_scores],
-        "components": components
+        "aic_scores": [float(score) for score in aic_scores],
+        "components": components,
+        "transform_params": transform_params,
+        "method_used": method_used
     }
     return convert_numpy_types(result)
 
