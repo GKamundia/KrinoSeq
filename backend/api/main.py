@@ -191,18 +191,18 @@ async def configure_filter(job_id: str, config: FilterPipelineConfig):
         }
         pipeline_config.append(stage_dict)
     
-    # Add debugging to verify the configuration
+    # Log before validation
     for stage in pipeline_config:
         if stage["method"] == "natural":
-            print(f"BEFORE VALIDATION - Natural breakpoint params: {stage['params']}")
-    
+            print(f"BEFORE VALIDATION - Natural breakpoint params: {stage.get('params', {})}")
+            
     # Validate the configuration
     is_valid, error_message, validated_config = validate_pipeline_config(pipeline_config)
     
     if not is_valid:
         raise HTTPException(status_code=400, detail=f"Invalid configuration: {error_message}")
     
-    # After validation:
+    # After validation
     for stage in validated_config:
         if stage["method"] == "natural":
             print(f"AFTER VALIDATION - Natural breakpoint params: {stage['params']}")

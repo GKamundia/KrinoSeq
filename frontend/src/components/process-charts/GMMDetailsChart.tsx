@@ -29,8 +29,54 @@ const GMMDetailsChart: React.FC<GMMDetailsChartProps> = ({ details }) => {
   // Format BIC scores for chart
   const bicScores = details.bic_scores?.map((score: number, index: number) => ({
     components: index + 1,
-    bic: score
+    score: score
   })) || [];
+  
+  // Format AIC scores for chart
+  const aicScores = details.aic_scores?.map((score: number, index: number) => ({
+    components: index + 1,
+    score: score
+  })) || [];
+  
+  // Format LOO scores for chart
+  const looScores = details.loo_scores?.map((score: number, index: number) => ({
+    components: index + 1,
+    score: score
+  })) || [];
+  
+  // Format weight concentrations for Dirichlet
+  const weightData = details.weight_concentrations?.map((weight: number, index: number) => ({
+    component: index + 1,
+    weight: weight * 100 // Convert to percentage
+  })) || [];
+  
+  // Determine which method is being used
+  const componentMethod = details.component_selection_method || 'bic';
+  
+  // Determine appropriate title and data based on method
+  let metricsTitle = 'BIC Scores by Component Count';
+  let metricsData = bicScores;
+  let metricsKey = 'score';
+  let metricsColor = '#82ca9d';
+  let metricsLabel = 'BIC Score';
+  
+  if (componentMethod === 'aic') {
+    metricsTitle = 'AIC Scores by Component Count';
+    metricsData = aicScores;
+    metricsLabel = 'AIC Score';
+    metricsColor = '#8884d8';
+  } else if (componentMethod === 'loo') {
+    metricsTitle = 'LOO Scores by Component Count';
+    metricsData = looScores;
+    metricsLabel = 'LOO Score';
+    metricsColor = '#ffc658';
+  } else if (componentMethod === 'dirichlet') {
+    metricsTitle = 'Component Weights (Dirichlet Process)';
+    metricsData = weightData;
+    metricsKey = 'weight';
+    metricsLabel = 'Weight (%)';
+    metricsColor = '#ff8042';
+  }
   
   // Process component curves data for visualization
   const combinedData = details.component_curves?.length > 0 
@@ -143,34 +189,57 @@ const GMMDetailsChart: React.FC<GMMDetailsChartProps> = ({ details }) => {
         <Grid item xs={12} md={6}>
           <Paper sx={{ p: 2 }}>
             <Typography variant="subtitle2" gutterBottom>
-              BIC Scores by Component Count
+              {metricsTitle}
             </Typography>
             <Box sx={{ height: 250 }}>
-              {bicScores.length > 0 ? (
+              {metricsData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={bicScores}>
+                  <BarChart data={metricsData}>
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="components" label={{ value: 'Number of Components', position: 'insideBottom', offset: -5 }} />
-                    <YAxis label={{ value: 'BIC Score', angle: -90, position: 'insideLeft' }} />
-                    <Tooltip formatter={(value: any) => value.toLocaleString()} />
-                    <Bar dataKey="bic" fill="#82ca9d" />
-                    <ReferenceLine
-                      x={details.optimal_components}
-                      stroke="red"
-                      strokeDasharray="3 3"
-                      label={{ value: 'Optimal', position: 'insideTopRight', fill: 'red' }}
+                    <XAxis 
+                      dataKey={componentMethod === 'dirichlet' ? 'component' : 'components'} 
+                      label={{ 
+                        value: componentMethod === 'dirichlet' ? 'Component' : 'Number of Components', 
+                        position: 'insideBottom', 
+                        offset: -5 
+                      }} 
                     />
+                    <YAxis 
+                      label={{ 
+                        value: metricsLabel, 
+                        angle: -90, 
+                        position: 'insideLeft' 
+                      }} 
+                    />
+                    <Tooltip formatter={(value: any) => value.toLocaleString()} />
+                    <Bar dataKey={metricsKey} fill={metricsColor} />
+                    {(componentMethod !== 'dirichlet' && details.optimal_components) && (
+                      <ReferenceLine
+                        x={details.optimal_components}
+                        stroke="red"
+                        strokeDasharray="3 3"
+                        label={{ value: 'Optimal', position: 'insideTopRight', fill: 'red' }}
+                      />
+                    )}
                   </BarChart>
                 </ResponsiveContainer>
               ) : (
                 <Typography variant="body2" color="text.secondary" sx={{ pt: 5, textAlign: 'center' }}>
-                  BIC scores are not available. This may be because:
-                  <ul>
-                    <li>Only one component was detected</li>
-                    <li>You're using Dirichlet method which doesn't provide BIC</li>
-                    <li>Component method is set incorrectly</li>
-                  </ul>
-                  Try changing the Component Selection method to "bic" in filter settings.
+                  {componentMethod === 'dirichlet' ? (
+                    <>
+                      Dirichlet process automatically determines components based on complexity.
+                      <br/>It doesn't use information criteria like BIC or AIC.
+                    </>
+                  ) : (
+                    <>
+                      {metricsTitle} are not available. This may be because:
+                      <ul>
+                        <li>Only one component was detected</li>
+                        <li>Component method doesn't match displayed metrics</li>
+                        <li>Insufficient data for model comparison</li>
+                      </ul>
+                    </>
+                  )}
                 </Typography>
               )}
             </Box>

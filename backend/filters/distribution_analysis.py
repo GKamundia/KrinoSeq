@@ -25,6 +25,9 @@ def detect_multimodality(lengths: List[int], max_components: int = 10,
     Returns:
         Dictionary with multimodality analysis results
     """
+    # Add debug output at the beginning
+    print(f"Running GMM with component_method={component_method}, transform_type={transform_type}")
+
     if not lengths or len(lengths) < 50:
         print(f"Not enough data points for GMM: {len(lengths)} < 50")
         return {
@@ -87,8 +90,12 @@ def detect_multimodality(lengths: List[int], max_components: int = 10,
             "optimal_components": len(components),
             "components": components,
             "transform_params": transform_params,
-            "method_used": "dirichlet"
+            "method_used": "dirichlet",
+            "weight_concentrations": [float(w) for w in model.weights_],
+            "weight_concentration_prior": float(1.0/max_components)
         }
+        print(f"Selected {len(components)} components using dirichlet method")
+        print(f"Dirichlet Process found {len(components)} components with weights: {[c['weight'] for c in components]}")
         return convert_numpy_types(result)
     
     # Traditional information criteria approaches
@@ -165,6 +172,19 @@ def detect_multimodality(lengths: List[int], max_components: int = 10,
         "transform_params": transform_params,
         "method_used": method_used
     }
+    
+    # Add calculated LOO scores if they were computed
+    if component_method == "loo":
+        result["loo_scores"] = [float(score) for score in loo_scores]
+    
+    print(f"Selected {len(components)} components using {method_used} method")
+    if component_method == "bic":
+        print(f"BIC scores: {bic_scores}")
+    elif component_method == "aic":
+        print(f"AIC scores: {aic_scores}")
+    elif component_method == "loo":
+        print(f"LOO scores: {loo_scores}")
+    
     return convert_numpy_types(result)
 
 
@@ -273,7 +293,11 @@ def identify_natural_cutoffs(lengths: List[int], method: str = "midpoint",
             "sorted_components": orig_components,  # Add sorted_components for frontend
             "histogram": histogram_data,
             "component_curves": component_curves,
-            "bic_scores": multimodal_results.get("bic_scores", [])
+            "bic_scores": multimodal_results.get("bic_scores", []),
+            "aic_scores": multimodal_results.get("aic_scores", []),
+            "loo_scores": multimodal_results.get("loo_scores", []),
+            "weight_concentrations": multimodal_results.get("weight_concentrations", []),
+            "optimal_components": len(components)
         }
     
     # Focus on the first two components for cutoff calculation
@@ -409,6 +433,9 @@ def identify_natural_cutoffs(lengths: List[int], method: str = "midpoint",
         "peak_cutoffs": peak_cutoffs,
         "valley_cutoffs": valley_cutoffs,
         "bic_scores": multimodal_results.get("bic_scores", []),
+        "aic_scores": multimodal_results.get("aic_scores", []),
+        "loo_scores": multimodal_results.get("loo_scores", []),
+        "weight_concentrations": multimodal_results.get("weight_concentrations", []),
         "optimal_components": len(components)
     }
     
