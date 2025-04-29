@@ -317,28 +317,37 @@ def apply_optimal_filter_with_details(
         # Get GMM parameters with defaults
         gmm_method = kwargs.get("gmm_method", "midpoint")
         transform_type = kwargs.get("transform", "box-cox")
-        component_method = kwargs.get("component_method", "bic")
+        component_method = kwargs.get("component_method", "bic")  # Default to BIC
         
-        print(f"Natural breakpoint using: {gmm_method}, transform={transform_type}, component={component_method}")
+        print(f"Natural breakpoint using cutoff method: {gmm_method}, transform: {transform_type}, component selection: {component_method}")
         
-        # Use natural breakpoints with all parameters
+        # Make sure all parameters are passed
         breakpoints = identify_natural_cutoffs(
             lengths, 
             method=gmm_method,
             transform_type=transform_type,
-            component_method=component_method
+            component_method=component_method  # Ensure this is passed
         )
         
-        # Get recommended cutoff
-        cutoffs = breakpoints.get("recommended", [])
+        # Get recommended cutoff - check both field names for compatibility
+        cutoffs = breakpoints.get("recommended", breakpoints.get("recommended_cutoffs", []))
         
         if not cutoffs:
             print("No natural breakpoint found")
             return seq_lengths, {"natural_breakpoint_details": breakpoints}
         
         cutoff = cutoffs[0]
+        print(f"Applying natural breakpoint filter with cutoff: {cutoff}")
+        
+        # Count sequences before filtering
+        before_count = len(seq_lengths)
+        
         filtered_seqs = {seq_id: length for seq_id, length in seq_lengths.items() 
                         if length >= cutoff}
+        
+        # Count sequences after filtering
+        after_count = len(filtered_seqs)
+        print(f"Filtered {before_count - after_count} sequences ({(before_count - after_count) / before_count * 100:.1f}%)")
         
         process_details["natural_breakpoint_details"] = breakpoints
         

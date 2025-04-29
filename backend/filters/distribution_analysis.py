@@ -26,6 +26,7 @@ def detect_multimodality(lengths: List[int], max_components: int = 10,
         Dictionary with multimodality analysis results
     """
     if not lengths or len(lengths) < 50:
+        print(f"Not enough data points for GMM: {len(lengths)} < 50")
         return {
             "is_multimodal": False,
             "optimal_components": 1,
@@ -38,9 +39,9 @@ def detect_multimodality(lengths: List[int], max_components: int = 10,
     X = transformed_data.reshape(-1, 1)
     
     # Cap max components based on data size
-    max_components = min(max_components, len(lengths) // 100, 10)
+    max_components = min(max_components, max(2, len(lengths) // 100), 10)
     if len(lengths) < 1000:
-        max_components = min(max_components, 5)
+        max_components = max(2, min(max_components, 5))
     
     # Dirichlet Process approach (nonparametric)
     if component_method == "dirichlet":
@@ -198,8 +199,8 @@ def find_distribution_breakpoints(lengths: List[int],
 
 
 def identify_natural_cutoffs(lengths: List[int], method: str = "midpoint",
-                            transform_type: str = "box-cox", 
-                            component_method: str = "bic") -> Dict[str, Any]:
+                           transform_type: str = "box-cox", 
+                           component_method: str = "bic") -> Dict[str, Any]:
     """
     Identify natural cutoff points with data transformation and improved component selection.
     """
@@ -209,8 +210,10 @@ def identify_natural_cutoffs(lengths: List[int], method: str = "midpoint",
         return {
             "gmm_based": [],
             "recommended": [],
+            "recommended_cutoffs": [],  # Add this for frontend compatibility
             "method_used": method,
-            "transform_params": {"type": "none"}
+            "transform_params": {"type": "none"},
+            "is_multimodal": False
         }
     
     # Get multimodality analysis with transformation
@@ -223,15 +226,46 @@ def identify_natural_cutoffs(lengths: List[int], method: str = "midpoint",
     transform_params = multimodal_results.get("transform_params", {"type": "none"})
     components = multimodal_results.get("components", [])
     
+    # Store both transformed and original versions of components
+    orig_components = []
+    for comp in components:
+        # Create a copy to avoid modifying the original
+        orig_comp = comp.copy()
+        # Add original space values
+        orig_comp["mean_original"] = inverse_transform_value(comp["mean"], transform_params)
+        orig_comp["std_original"] = abs(inverse_transform_value(comp["mean"] + comp["std"], transform_params) - 
+                                      inverse_transform_value(comp["mean"], transform_params))
+        # Keep transformed values too
+        orig_comp["mean_transformed"] = comp["mean"]
+        orig_comp["std_transformed"] = comp["std"]
+        orig_components.append(orig_comp)
+    
+    # Fix the multimodal flag - we are multimodal if we have multiple components
+    is_multimodal = len(components) > 1
+    
     # If we have fewer than 2 components, we can't calculate a cutoff
     if len(components) < 2:
         print("Insufficient components to calculate cutoff")
+        from ..core.visualization import generate_histogram_data
+        histogram_data = generate_histogram_data(lengths)
+        
+        # Even if no cutoff, still generate component curves if available
+        component_curves = generate_component_curves(components, transform_params, lengths)
+        
         return {
             "gmm_based": [],
             "recommended": [],
+            "recommended_cutoffs": [],  # Add these for frontend compatibility
             "method_used": method,
+            "component_selection_method": component_method,
             "transform_params": transform_params,
-            "component_count": len(components)
+            "component_count": len(components),
+            "is_multimodal": is_multimodal,
+            "components": orig_components,
+            "sorted_components": orig_components,  # Add sorted_components for frontend
+            "histogram": histogram_data,
+            "component_curves": component_curves,
+            "bic_scores": multimodal_results.get("bic_scores", [])
         }
     
     # Focus on the first two components for cutoff calculation
@@ -331,14 +365,43 @@ def identify_natural_cutoffs(lengths: List[int], method: str = "midpoint",
     else:
         filtering_stats = {}
     
+    # Generate histogram data for visualization
+    from ..core.visualization import generate_histogram_data
+    histogram_data = generate_histogram_data(lengths)
+    
+    # Generate component curves data for frontend visualization
+    component_curves = generate_component_curves(components, transform_params, lengths)
+    
+    # Find candidate cutoffs for reference
+    peak_cutoffs = find_distribution_breakpoints(lengths)
+    
+    # Calculate KDE for valley detection
+    kde = stats.gaussian_kde(lengths)
+    x = np.linspace(min(lengths), max(lengths), 1000)
+    density = kde(x)
+    neg_density = -density
+    valleys, _ = find_peaks(neg_density, prominence=0.1)
+    valley_cutoffs = [int(x[v]) for v in valleys]
+    
     result = {
         "gmm_based": gmm_cutoffs,
         "recommended": gmm_cutoffs,
+        "recommended_cutoffs": gmm_cutoffs,  # Add this for frontend compatibility
+        "selected_cutoff": gmm_cutoffs[0] if gmm_cutoffs else None,
         "method_used": method,
+        "component_selection_method": component_method,
         "transform_params": transform_params,
         "component_count": len(components),
+        "is_multimodal": is_multimodal,  # Fixed multimodal flag
         "filtering_stats": filtering_stats,
-        "components": components[:5]  # Include the first 5 components for visualization
+        "components": orig_components,  # Components with original space values
+        "sorted_components": orig_components,  # Add sorted_components for frontend
+        "histogram": histogram_data,
+        "component_curves": component_curves,  # Add component curves for visualization
+        "peak_cutoffs": peak_cutoffs,
+        "valley_cutoffs": valley_cutoffs,
+        "bic_scores": multimodal_results.get("bic_scores", []),
+        "optimal_components": len(components)
     }
     
     return convert_numpy_types(result)
@@ -401,31 +464,39 @@ def detect_outliers_combined(lengths: List[int]) -> Tuple[List[int], List[int]]:
 def transform_data(lengths: List[int], transform_type: str = "box-cox") -> Tuple[np.ndarray, Dict[str, Any]]:
     """
     Transform length data to achieve better normality for GMM modeling.
-    
-    Args:
-        lengths: List of sequence lengths
-        transform_type: Transformation method ('box-cox', 'log', 'none')
-        
-    Returns:
-        Tuple of (transformed data, transformation parameters)
     """
     transform_params = {"type": transform_type}
     
     if transform_type == "box-cox":
-        # Box-Cox requires positive values
-        min_length = min(lengths)
-        if min_length <= 0:
-            offset = abs(min_length) + 1
-            adjusted_lengths = [x + offset for x in lengths]
-        else:
-            offset = 0
-            adjusted_lengths = lengths
-        
-        # Apply Box-Cox transformation
-        transformed_data, lmbda = stats.boxcox(adjusted_lengths)
-        transform_params.update({"lambda": float(lmbda), "offset": offset})
-        print(f"Box-Cox transformation applied with lambda={lmbda:.4f}, offset={offset}")
-        
+        try:
+            # Box-Cox requires positive values
+            min_length = min(lengths)
+            if min_length <= 0:
+                offset = abs(min_length) + 1
+                adjusted_lengths = [x + offset for x in lengths]
+            else:
+                offset = 0
+                adjusted_lengths = lengths
+            
+            # Apply Box-Cox transformation with bounded lambda
+            # This avoids extreme transformations that can cause issues
+            transformed_data, lmbda = stats.boxcox(adjusted_lengths, lmbda=None)
+            
+            # Limit lambda to a reasonable range
+            if abs(lmbda) > 3:
+                print(f"Box-Cox lambda {lmbda:.4f} is extreme, limiting transformation")
+                lmbda = 0 if lmbda < 0 else 0.5
+                transformed_data = np.log1p(adjusted_lengths) if lmbda < 0.01 else np.power(adjusted_lengths, lmbda)
+            
+            transform_params.update({"lambda": float(lmbda), "offset": offset})
+            print(f"Box-Cox transformation applied with lambda={lmbda:.4f}, offset={offset}")
+            
+        except Exception as e:
+            print(f"Box-Cox transformation failed: {str(e)}, falling back to log transform")
+            # Fallback to log transform
+            transformed_data = np.log1p(lengths)
+            transform_params = {"type": "log", "offset": 1}
+    
     elif transform_type == "log":
         # Log transformation (add 1 to handle zeros)
         transformed_data = np.log1p(lengths)
@@ -466,6 +537,72 @@ def inverse_transform_value(value: float, transform_params: Dict[str, Any]) -> f
         original = value
         
     return original
+
+
+def generate_component_curves(components: List[Dict], transform_params: Dict, lengths: List[int]) -> List[Dict]:
+    """
+    Generate component curve data in the original space for visualization.
+    
+    Args:
+        components: List of component parameters (weight, mean, std) in transformed space
+        transform_params: Transformation parameters
+        lengths: Original length values for determining proper range
+        
+    Returns:
+        List of component curves with x and y values in original space
+    """
+    if not components:
+        return []
+    
+    curves = []
+    
+    # Determine appropriate range for curve generation (both in transformed and original space)
+    min_length = min(lengths)
+    max_length = max(lengths)
+    
+    # Generate 200 points in original space
+    original_x = np.linspace(min_length, max_length, 200)
+    
+    # Transform these points to transformed space
+    if transform_params["type"] == "box-cox":
+        lmbda = transform_params.get("lambda", 0)
+        offset = transform_params.get("offset", 0)
+        
+        if abs(lmbda) < 1e-8:  # Lambda near zero is approximately log
+            transformed_x = np.log(original_x + offset)
+        else:
+            transformed_x = ((original_x + offset) ** lmbda - 1) / lmbda
+    
+    elif transform_params["type"] == "log":
+        transformed_x = np.log1p(original_x)
+    
+    else:  # No transformation
+        transformed_x = original_x
+    
+    # For each component, calculate its density in transformed space and keep x in original space
+    for i, comp in enumerate(components):
+        mean_t = comp["mean"]  # Mean in transformed space
+        std_t = comp["std"]    # Std in transformed space
+        weight = comp["weight"]
+        
+        # Calculate density in transformed space
+        density_t = weight * stats.norm.pdf(transformed_x, mean_t, std_t)
+        
+        # Store curve with x in original space
+        curve = {
+            "x": original_x.tolist(),
+            "y": density_t.tolist(),
+            "component_index": i,
+            "weight": weight,
+            "mean_transformed": mean_t,
+            "std_transformed": std_t,
+            "mean_original": inverse_transform_value(mean_t, transform_params),
+            "std_original": abs(inverse_transform_value(mean_t + std_t, transform_params) - 
+                              inverse_transform_value(mean_t, transform_params))
+        }
+        curves.append(curve)
+    
+    return curves
 
 
 def convert_numpy_types(obj):

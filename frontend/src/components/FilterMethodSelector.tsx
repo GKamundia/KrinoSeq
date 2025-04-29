@@ -197,7 +197,8 @@ const FilterMethodSelector: React.FC = () => {
                   <MenuItem value="dirichlet">Dirichlet Process (Automatic)</MenuItem>
                 </Select>
                 <FormHelperText>
-                  Method to determine optimal number of components
+                  <strong>Note:</strong> This selects how to determine the number of clusters, 
+                  not where to place the cutoff (which is set by GMM Cutoff Method)
                 </FormHelperText>
               </FormControl>
             </Grid>
