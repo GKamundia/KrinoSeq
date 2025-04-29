@@ -150,19 +150,54 @@ const FilterMethodSelector: React.FC = () => {
                   label="GMM Cutoff Method"
                   onChange={handleChange}
                 >
-                  <MenuItem value="midpoint">Midpoint between components (Simple)</MenuItem>
-                  <MenuItem value="intersection">Intersection point (Weighted)</MenuItem>
-                  <MenuItem value="probability">Probability assignment (0.5 threshold)</MenuItem>
-                  <MenuItem value="valley">Valley finding (PDF local minima)</MenuItem>
+                  <MenuItem value="midpoint">Midpoint between components</MenuItem>
+                  <MenuItem value="intersection">Intersection point (weighted PDFs)</MenuItem>
+                  <MenuItem value="probability">Probability threshold (0.5)</MenuItem>
+                  <MenuItem value="valley">Valley finding (minimum density)</MenuItem>
                 </Select>
                 <FormHelperText>
-                  Select the method used to determine the cutoff point between components:
-                  <ul>
-                    <li><strong>Midpoint</strong>: Simple average between means</li>
-                    <li><strong>Intersection</strong>: Finds where weighted PDFs intersect</li>
-                    <li><strong>Probability</strong>: Point where posterior P(comp1|x) = 0.5</li>
-                    <li><strong>Valley</strong>: The local minimum in the combined density</li>
-                  </ul>
+                  Method to determine cutoff point between adjacent components
+                </FormHelperText>
+              </FormControl>
+            </Grid>
+            
+            <Grid item xs={12}>
+              <FormControl fullWidth>
+                <InputLabel id={`transform-label-${index}`}>Transformation</InputLabel>
+                <Select
+                  labelId={`transform-label-${index}`}
+                  name={`stages.${index}.params.transform`}
+                  value={values.stages[index].params?.transform || 'box-cox'}
+                  label="Transformation"
+                  onChange={handleChange}
+                >
+                  <MenuItem value="box-cox">Box-Cox (Best for genomic data)</MenuItem>
+                  <MenuItem value="log">Log Transform</MenuItem>
+                  <MenuItem value="none">No transformation</MenuItem>
+                </Select>
+                <FormHelperText>
+                  Data transformation to normalize skewed distributions
+                </FormHelperText>
+              </FormControl>
+            </Grid>
+            
+            <Grid item xs={12}>
+              <FormControl fullWidth>
+                <InputLabel id={`component-method-label-${index}`}>Component Selection</InputLabel>
+                <Select
+                  labelId={`component-method-label-${index}`}
+                  name={`stages.${index}.params.component_method`}
+                  value={values.stages[index].params?.component_method || 'bic'}
+                  label="Component Selection"
+                  onChange={handleChange}
+                >
+                  <MenuItem value="bic">BIC (Bayesian Information Criterion)</MenuItem>
+                  <MenuItem value="aic">AIC (Akaike Information Criterion)</MenuItem>
+                  <MenuItem value="loo">PSIS-LOO (Cross-validation approximation)</MenuItem>
+                  <MenuItem value="dirichlet">Dirichlet Process (Automatic)</MenuItem>
+                </Select>
+                <FormHelperText>
+                  Method to determine optimal number of components
                 </FormHelperText>
               </FormControl>
             </Grid>

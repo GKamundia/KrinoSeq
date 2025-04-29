@@ -79,9 +79,18 @@ def apply_optimal_filter(seq_lengths: Dict[str, int],
         return filter_by_length(seq_lengths, min_length=optimal_cutoff)
     
     elif method == "natural":
-        # Use natural breakpoints with the specific GMM method
+        # Use natural breakpoints with all specified parameters
         gmm_method = kwargs.get("gmm_method", "midpoint")
-        cutoffs = identify_natural_cutoffs(lengths, method=gmm_method)["recommended"]
+        transform_type = kwargs.get("transform", "box-cox")
+        component_method = kwargs.get("component_method", "bic")
+        
+        cutoffs = identify_natural_cutoffs(
+            lengths, 
+            method=gmm_method,
+            transform_type=transform_type,
+            component_method=component_method
+        )["recommended"]
+        
         if not cutoffs:
             return seq_lengths  # No natural cutoffs found
         
@@ -305,80 +314,35 @@ def apply_optimal_filter_with_details(
         return filtered, process_details
         
     elif method == "natural":
-        # Get GMM method parameter
+        # Get GMM parameters with defaults
         gmm_method = kwargs.get("gmm_method", "midpoint")
-        # Add debug output
-        print(f"Natural breakpoint filter using method: {gmm_method}")
+        transform_type = kwargs.get("transform", "box-cox")
+        component_method = kwargs.get("component_method", "bic")
         
-        # Use natural breakpoints with specified method
-        breakpoints = identify_natural_cutoffs(lengths, method=gmm_method)
+        print(f"Natural breakpoint using: {gmm_method}, transform={transform_type}, component={component_method}")
         
-        # Gather GMM components information
-        multimodal_results = detect_multimodality(lengths)
-        components = []
-        for i, comp in enumerate(multimodal_results["components"]):
-            components.append({
-                "index": i,
-                "weight": comp["weight"],
-                "mean": comp["mean"],
-                "std": comp["std"]
-            })
+        # Use natural breakpoints with all parameters
+        breakpoints = identify_natural_cutoffs(
+            lengths, 
+            method=gmm_method,
+            transform_type=transform_type,
+            component_method=component_method
+        )
         
-        # Add sorted components for visibility in the frontend
-        sorted_components = sorted(components, key=lambda c: c["mean"])
+        # Get recommended cutoff
+        cutoffs = breakpoints.get("recommended", [])
         
-        # Generate visualization data for GMM components
-        x = np.linspace(min(lengths), max(lengths), 1000) if lengths else np.linspace(0, 1, 100)
-        component_curves = []
+        if not cutoffs:
+            print("No natural breakpoint found")
+            return seq_lengths, {"natural_breakpoint_details": breakpoints}
         
-        for comp in multimodal_results["components"]:
-            weight = comp["weight"]
-            mean = comp["mean"]
-            std = comp["std"]
-            y = weight * stats.norm.pdf(x, mean, std)
-            component_curves.append({
-                "x": x.tolist(),
-                "y": y.tolist(),
-                "mean": mean,
-                "std": std,
-                "weight": weight
-            })
+        cutoff = cutoffs[0]
+        filtered_seqs = {seq_id: length for seq_id, length in seq_lengths.items() 
+                        if length >= cutoff}
         
-        # Calculate the combined PDF
-        combined_curve = np.zeros_like(x)
-        for comp in multimodal_results["components"]:
-            weight = comp["weight"]
-            mean = comp["mean"]
-            std = comp["std"]
-            combined_curve += weight * stats.norm.pdf(x, mean, std)
+        process_details["natural_breakpoint_details"] = breakpoints
         
-        process_details["natural_breakpoint_details"] = {
-            "is_multimodal": multimodal_results["is_multimodal"],
-            "optimal_components": multimodal_results["optimal_components"],
-            "bic_scores": multimodal_results["bic_scores"],
-            "components": components,
-            "sorted_components": sorted_components,  # Add sorted components
-            "component_curves": component_curves,
-            "combined_curve": {
-                "x": x.tolist(),
-                "y": combined_curve.tolist()
-            },
-            "gmm_cutoffs": breakpoints["gmm_based"],
-            "peak_cutoffs": breakpoints["peak_based"],
-            "valley_cutoffs": breakpoints["valley_based"],
-            "recommended_cutoffs": breakpoints["recommended"],
-            "selected_cutoff": breakpoints["recommended"][0] if breakpoints["recommended"] else None,
-            "method_used": gmm_method,  # Add the method used
-            "histogram": generate_histogram_data(lengths)
-        }
-        
-        # Use first recommended cutoff if available
-        if breakpoints["recommended"]:
-            filtered = filter_by_length(seq_lengths, min_length=breakpoints["recommended"][0])
-        else:
-            filtered = seq_lengths.copy()
-            
-        return filtered, process_details
+        return filtered_seqs, process_details
     
     else:
         raise ValueError(f"Unknown filtering method: {method}")

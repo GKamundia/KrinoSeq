@@ -154,6 +154,15 @@ const GMMDetailsChart: React.FC<GMMDetailsChartProps> = ({ details }) => {
               <Typography variant="body2" gutterBottom>
                 <strong>Cutoff Method:</strong> {details.method_used || 'midpoint'}
               </Typography>
+              <Typography variant="body2" gutterBottom>
+                <strong>Transform Type:</strong> {details.transform_params?.type || 'none'}
+                {details.transform_params?.type === 'box-cox' && details.transform_params?.lambda && (
+                  <span> (λ = {details.transform_params.lambda.toFixed(4)})</span>
+                )}
+              </Typography>
+              <Typography variant="body2" gutterBottom>
+                <strong>Component Method:</strong> {details.method_used || 'bic'}
+              </Typography>
               
               <Typography variant="subtitle2" gutterBottom sx={{ mt: 3 }}>
                 Component Details
@@ -208,6 +217,44 @@ const GMMDetailsChart: React.FC<GMMDetailsChartProps> = ({ details }) => {
                 <Typography variant="body2">
                   <strong>Recommended Cutoffs:</strong> {details.recommended_cutoffs?.map((c: number) => c.toLocaleString()).join(', ') || 'None'}
                 </Typography>
+              </Box>
+
+              <Typography variant="subtitle2" gutterBottom sx={{ mt: 3 }}>
+                Transformation Details
+              </Typography>
+
+              <Box sx={{ mt: 1 }}>
+                <Typography variant="body2">
+                  <strong>Transform Type:</strong> {details.transform_params?.type || 'none'}
+                </Typography>
+                {details.transform_params?.type === 'box-cox' && (
+                  <Typography variant="body2">
+                    <strong>Lambda:</strong> {details.transform_params?.lambda?.toFixed(4)}
+                    <strong> Offset:</strong> {details.transform_params?.offset || 0}
+                  </Typography>
+                )}
+              </Box>
+
+              <Typography variant="subtitle2" gutterBottom sx={{ mt: 3 }}>
+                Filtering Impact
+              </Typography>
+
+              <Box sx={{ mt: 1 }}>
+                {details.filtering_stats && (
+                  <>
+                    <Typography variant="body2">
+                      <strong>Cutoff Value:</strong> {details.filtering_stats.cutoff?.toLocaleString()} bp
+                    </Typography>
+                    <Typography variant="body2">
+                      <strong>Contigs Retained:</strong> {details.filtering_stats.retained_contigs?.toLocaleString()} 
+                      ({details.filtering_stats.retained_contigs_percent?.toFixed(1)}%)
+                    </Typography>
+                    <Typography variant="body2">
+                      <strong>Base Pairs Retained:</strong> {details.filtering_stats.retained_bp?.toLocaleString()} 
+                      ({details.filtering_stats.retained_bp_percent?.toFixed(1)}%)
+                    </Typography>
+                  </>
+                )}
               </Box>
             </Box>
           </Paper>
