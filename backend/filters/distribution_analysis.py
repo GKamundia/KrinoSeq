@@ -591,12 +591,24 @@ def generate_component_curves(components: List[Dict], transform_params: Dict, le
     
     curves = []
     
-    # Determine appropriate range for curve generation (both in transformed and original space)
+    # Determine appropriate range for curve generation
     min_length = min(lengths)
     max_length = max(lengths)
     
-    # Generate 200 points in original space
-    original_x = np.linspace(min_length, max_length, 200)
+    # Use more points for smoother curves
+    n_points = 300
+    
+    # Generate points with logarithmic spacing for better resolution at small values
+    # This helps with genomic data which often spans several orders of magnitude
+    if min_length <= 0:
+        min_length = 1
+    
+    if max_length / min_length > 100:
+        # Use logarithmic spacing for wide range distributions
+        original_x = np.exp(np.linspace(np.log(min_length), np.log(max_length), n_points))
+    else:
+        # Use linear spacing for narrower distributions
+        original_x = np.linspace(min_length, max_length, n_points)
     
     # Transform these points to transformed space
     if transform_params["type"] == "box-cox":

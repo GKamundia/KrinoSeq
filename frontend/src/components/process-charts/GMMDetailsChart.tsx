@@ -1,6 +1,9 @@
 import React from 'react';
 import { Box, Typography, Paper, Grid, Chip, Stack } from '@mui/material';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, LineChart, Line, Legend } from 'recharts';
+import { 
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
+  ReferenceLine, LineChart, Line, Legend, ComposedChart, Area 
+} from 'recharts';
 
 interface GMMDetailsChartProps {
   details: any;
@@ -92,8 +95,19 @@ const GMMDetailsChart: React.FC<GMMDetailsChartProps> = ({ details }) => {
       }) 
     : [];
   
-  // Colors for components
-  const componentColors = ['#8884d8', '#82ca9d', '#ffc658', '#ff8042', '#0088fe'];
+  // Enhanced color palette for better visual distinction
+  const componentColors = [
+    '#2E86C1', // Blue
+    '#28B463', // Green 
+    '#D4AC0D', // Yellow
+    '#CB4335', // Red
+    '#8E44AD', // Purple
+    '#F39C12', // Orange
+    '#16A085', // Teal
+    '#E74C3C', // Bright Red
+    '#3498DB', // Light Blue
+    '#1ABC9C'  // Turquoise
+  ];
   
   // Use either sorted_components or components
   const componentData = details.sorted_components || details.components || [];
@@ -103,40 +117,82 @@ const GMMDetailsChart: React.FC<GMMDetailsChartProps> = ({ details }) => {
     ? details.is_multimodal 
     : (componentData.length > 1);
     
+  // Create combined histogram + curves visualization data (overlay)
+  const combinedHistogramData = histogramData.map((item: string | any[]) => {
+    const correspondingPoints = combinedData.find((d: string | any[]) => Math.abs(d.length - item.length) < 0.001);
+    return {
+      ...(typeof item === 'object' && item !== null ? item : {}),
+      ...(correspondingPoints || {})
+    };
+  });
+
+  // Find the max y-value for scaling
+  const maxCount = Math.max(...histogramData.map((d: { count: any; }) => d.count));
+  
+  // Calculate an appropriate scaling factor for displaying components on the same scale as histogram
+  // This makes components visible alongside the histogram
+  const scalingFactor = maxCount * 0.75;
+    
   return (
     <Box>
       <Grid container spacing={3}>
         <Grid item xs={12} md={6}>
           <Paper sx={{ p: 2 }}>
             <Typography variant="subtitle2" gutterBottom>
-              Sequence Length Distribution with GMM Components
+              Sequence Length Distribution and GMM Components
             </Typography>
             <Box sx={{ height: 300 }}>
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={histogramData}>
+                <ComposedChart data={combinedHistogramData}>
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="length" />
-                  <YAxis />
-                  <Tooltip formatter={(value: any) => value.toLocaleString()} />
-                  <Bar dataKey="count" fill="#1976d2" fillOpacity={0.6} />
-                  {details.gmm_based?.map((cutoff: number, index: number) => (
-                    <ReferenceLine
-                      key={`cutoff-${index}`}
-                      x={cutoff}
-                      stroke="red"
-                      strokeDasharray="3 3"
-                      label={{ value: `Cutoff ${index + 1}`, position: 'insideBottomRight', fill: 'red', fontSize: 10 }}
-                    />
-                  ))}
+                  <XAxis 
+                    dataKey="length" 
+                    label={{ 
+                      value: 'Length (bp)', 
+                      position: 'insideBottomRight', 
+                      offset: -10 
+                    }}
+                  />
+                  <YAxis 
+                    yAxisId="count"
+                    label={{ 
+                      value: 'Sequence Count', 
+                      angle: -90, 
+                      position: 'insideLeft',
+                    }}
+                  />
+                  <YAxis 
+                    yAxisId="density" 
+                    orientation="right"
+                    domain={[0, 'auto']}
+                    label={{ 
+                      value: 'Component Density', 
+                      angle: 90, 
+                      position: 'insideRight' 
+                    }}
+                  />
+                  <Tooltip formatter={(value: any, name: string) => {
+                    if (name === 'count') return value.toLocaleString();
+                    return value.toExponential(4);
+                  }} />
+                  <Legend />
+                  <Bar 
+                    dataKey="count" 
+                    fill="#1976d2" 
+                    fillOpacity={0.6} 
+                    yAxisId="count" 
+                    name="Sequence Count"
+                  />
                   {details.selected_cutoff && (
                     <ReferenceLine
                       x={details.selected_cutoff}
                       stroke="#ff8042"
                       strokeWidth={2}
+                      yAxisId="count"
                       label={{ value: 'Selected Cutoff', position: 'insideBottomRight', fill: '#ff8042', fontSize: 12 }}
                     />
                   )}
-                </BarChart>
+                </ComposedChart>
               </ResponsiveContainer>
             </Box>
           </Paper>
@@ -152,9 +208,22 @@ const GMMDetailsChart: React.FC<GMMDetailsChartProps> = ({ details }) => {
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={combinedData}>
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="length" />
-                    <YAxis />
-                    <Tooltip />
+                    <XAxis 
+                      dataKey="length" 
+                      label={{ 
+                        value: 'Length (bp)', 
+                        position: 'insideBottomRight', 
+                        offset: -10 
+                      }}
+                    />
+                    <YAxis 
+                      label={{ 
+                        value: 'Density', 
+                        angle: -90, 
+                        position: 'insideLeft' 
+                      }}
+                    />
+                    <Tooltip formatter={(value: any) => value.toExponential(4)} />
                     <Legend />
                     {componentData.map((component: any, index: number) => (
                       <Line
@@ -163,7 +232,9 @@ const GMMDetailsChart: React.FC<GMMDetailsChartProps> = ({ details }) => {
                         dataKey={`component_${index}`}
                         name={`Component ${index + 1} (${Math.round(component.weight * 100)}%)`}
                         stroke={componentColors[index % componentColors.length]}
+                        strokeWidth={3}
                         dot={false}
+                        activeDot={{ r: 6 }}
                       />
                     ))}
                     {details.selected_cutoff && (
