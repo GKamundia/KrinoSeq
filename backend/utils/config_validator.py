@@ -165,13 +165,32 @@ def validate_pipeline_config(config: List[Dict[str, Any]]) -> Tuple[bool, Option
             # Validate GMM method
             if "gmm_method" in params:
                 gmm_method = params["gmm_method"]
-                # ADD THIS - explicitly define the allowed GMM methods
                 allowed_gmm_methods = ["midpoint", "intersection", "probability", "valley"]
                 if gmm_method not in allowed_gmm_methods:
                     return False, f"Invalid GMM method: {gmm_method}. Must be one of {allowed_gmm_methods}", []
                 validated_params["gmm_method"] = gmm_method
             else:
                 validated_params["gmm_method"] = "midpoint"  # Default value
+            
+            # Add validation for component selection method
+            if "component_method" in params:
+                component_method = params["component_method"]
+                allowed_component_methods = ["bic", "aic", "loo", "dirichlet"]
+                if component_method not in allowed_component_methods:
+                    return False, f"Invalid component method: {component_method}. Must be one of {allowed_component_methods}", []
+                validated_params["component_method"] = component_method
+            else:
+                validated_params["component_method"] = "bic"  # Default value
+            
+            # Add validation for transform type
+            if "transform" in params:
+                transform = params["transform"]
+                allowed_transforms = ["box-cox", "log", "none"]
+                if transform not in allowed_transforms:
+                    return False, f"Invalid transform: {transform}. Must be one of {allowed_transforms}", []
+                validated_params["transform"] = transform
+            else:
+                validated_params["transform"] = "box-cox"  # Default value
                 
         elif method == "n50_optimize":
             # Validate N50 optimization parameters

@@ -38,8 +38,12 @@ def detect_multimodality(lengths: List[int], max_components: int = 10,
     transformed_data, transform_params = transform_data(lengths, transform_type)
     X = transformed_data.reshape(-1, 1)
     
-    # Cap max components based on data size
+    # Cap the maximum number of components based on the size of the data
+    # Ensure at least 2 components and limit to a maximum of 10
     max_components = min(max_components, max(2, len(lengths) // 100), 10)
+    
+    # Further restrict the maximum components for smaller datasets
+    # If the dataset has fewer than 1000 data points, limit to a maximum of 5 components
     if len(lengths) < 1000:
         max_components = max(2, min(max_components, 5))
     
@@ -223,6 +227,10 @@ def identify_natural_cutoffs(lengths: List[int], method: str = "midpoint",
         component_method=component_method
     )
     
+    # Add this line to get the actual method used from the results
+    # This ensures we use what was actually applied, not just what was requested
+    used_component_method = multimodal_results.get("method_used", component_method)
+    
     transform_params = multimodal_results.get("transform_params", {"type": "none"})
     components = multimodal_results.get("components", [])
     
@@ -257,7 +265,7 @@ def identify_natural_cutoffs(lengths: List[int], method: str = "midpoint",
             "recommended": [],
             "recommended_cutoffs": [],  # Add these for frontend compatibility
             "method_used": method,
-            "component_selection_method": component_method,
+            "component_selection_method": used_component_method,  # Use the method that was actually applied
             "transform_params": transform_params,
             "component_count": len(components),
             "is_multimodal": is_multimodal,
@@ -389,7 +397,7 @@ def identify_natural_cutoffs(lengths: List[int], method: str = "midpoint",
         "recommended_cutoffs": gmm_cutoffs,  # Add this for frontend compatibility
         "selected_cutoff": gmm_cutoffs[0] if gmm_cutoffs else None,
         "method_used": method,
-        "component_selection_method": component_method,
+        "component_selection_method": used_component_method,  # Use the method that was actually applied
         "transform_params": transform_params,
         "component_count": len(components),
         "is_multimodal": is_multimodal,  # Fixed multimodal flag
