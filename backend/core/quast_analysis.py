@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 # Define QUAST default parameters
 DEFAULT_QUAST_PARAMS = {
-    "min_contig": 500,
+    "min_contig": 0, # Minimum contig length to report
     "threads": 4,
     "gene_finding": True,
     "conserved_genes_finding": True,

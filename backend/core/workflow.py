@@ -120,8 +120,8 @@ class FilteringWorkflow:
         quast_results = None
         if self.run_quast and os.path.exists(output_fasta):
             try:
-                # Create quast directory in results folder
-                quast_dir = os.path.join(self.output_dir, f"{output_prefix}_quast")
+                # Create quast directory with standardized name
+                quast_dir = os.path.join(self.output_dir, "quast")
                 os.makedirs(quast_dir, exist_ok=True)
                 
                 # Generate assembly labels

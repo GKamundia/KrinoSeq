@@ -8,6 +8,7 @@ import uuid
 from typing import Dict, List, Optional, Any
 from pathlib import Path
 from datetime import datetime
+import json
 
 from fastapi import FastAPI, File, UploadFile, Form, BackgroundTasks, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -61,6 +62,83 @@ def get_job_info(job_id: str) -> Dict[str, Any]:
     if job_id not in active_jobs:
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
     return active_jobs[job_id]
+
+
+def setup_job_directories(job_id: str) -> Dict[str, Path]:
+    """
+    Create directory structure for a job including QUAST subdirectory.
+    
+    Args:
+        job_id: The job identifier
+        
+    Returns:
+        Dictionary with paths to job directories
+    """
+    # Define base directory for this job
+    job_dir = RESULTS_DIR / job_id
+    
+    # Define subdirectories
+    dirs = {
+        "job": job_dir,
+        "quast": job_dir / "quast",
+        "plots": job_dir / "plots",
+        "reports": job_dir / "reports"
+    }
+    
+    # Create directories
+    for dir_path in dirs.values():
+        dir_path.mkdir(parents=True, exist_ok=True)
+    
+    return dirs
+
+
+def create_quast_metadata(job_id: str, original_file: str, filtered_file: str, 
+                         quast_dir: str, reference_genome: Optional[str] = None) -> str:
+    """
+    Create metadata file linking QUAST results with the filtering job.
+    
+    Args:
+        job_id: The job identifier
+        original_file: Path to original assembly
+        filtered_file: Path to filtered assembly
+        quast_dir: Directory where QUAST results are stored
+        reference_genome: Optional path to reference genome
+        
+    Returns:
+        Path to created metadata file
+    """
+    metadata = {
+        "job_id": job_id,
+        "timestamp": datetime.now().isoformat(),
+        "original_assembly": {
+            "path": original_file,
+            "name": os.path.basename(original_file)
+        },
+        "filtered_assembly": {
+            "path": filtered_file,
+            "name": os.path.basename(filtered_file)
+        },
+        "quast_directory": quast_dir,
+        "reports": {
+            "html": os.path.join(quast_dir, "report.html"),
+            "tsv": os.path.join(quast_dir, "report.tsv"),
+            "transposed_tsv": os.path.join(quast_dir, "transposed_report.tsv"),
+            "pdf": os.path.join(quast_dir, "report.pdf")
+        }
+    }
+    
+    if reference_genome:
+        metadata["reference_genome"] = {
+            "path": reference_genome,
+            "name": os.path.basename(reference_genome)
+        }
+    
+    # Write metadata to file
+    metadata_file = os.path.join(quast_dir, "metadata.json")
+    with open(metadata_file, 'w') as f:
+        json.dump(metadata, f, indent=2)
+    
+    return metadata_file
 
 
 @app.get("/")
@@ -263,10 +341,21 @@ async def run_filter_job(job_id: str):
     job_info = active_jobs[job_id]
     
     try:
-        # Create workflow
+        # Create job directories including QUAST subdirectory
+        job_dirs = setup_job_directories(job_id)
+        
+        # Determine if reference genome is provided
+        reference_genome = None
+        if "reference_genome" in job_info:
+            reference_genome = job_info["reference_genome"]
+        
+        # Create workflow with QUAST enabled
         workflow = FilteringWorkflow(
             input_file=job_info["file_path"],
-            output_dir=str(RESULTS_DIR)
+            output_dir=str(job_dirs["job"]),  # Use job directory for output
+            run_quast=True,  # Enable QUAST
+            quast_options={"threads": 4, "gene_finding": True},
+            reference_genome=reference_genome
         )
         
         # Configure workflow
@@ -289,6 +378,35 @@ async def run_filter_job(job_id: str):
             job_info["status"] = JobStatus.FAILED
             job_info["message"] = results["error"]
             return
+        
+        # If QUAST was run successfully, create metadata and organize results
+        if "quast" in results and results["quast"].get("success", False):
+            # Create metadata file
+            quast_dir = results["quast"]["output_dir"]
+            
+            # If QUAST output is not in the standard quast directory, copy it there
+            if os.path.normpath(quast_dir) != os.path.normpath(str(job_dirs["quast"])):
+                # Copy QUAST results to the standard location
+                for file in os.listdir(quast_dir):
+                    src_file = os.path.join(quast_dir, file)
+                    dst_file = os.path.join(job_dirs["quast"], file)
+                    
+                    if os.path.isfile(src_file):
+                        shutil.copy2(src_file, dst_file)
+                    elif os.path.isdir(src_file):
+                        shutil.copytree(src_file, dst_file, dirs_exist_ok=True)
+                
+                # Update the quast directory in results
+                results["quast"]["output_dir"] = str(job_dirs["quast"])
+            
+            # Create metadata file
+            create_quast_metadata(
+                job_id=job_id,
+                original_file=job_info["file_path"],
+                filtered_file=results["output_file"],
+                quast_dir=str(job_dirs["quast"]),
+                reference_genome=reference_genome
+            )
         
         # Store results
         job_info["status"] = JobStatus.COMPLETED
@@ -383,6 +501,69 @@ async def download_file(job_id: str, file_name: str):
         path=output_file,
         filename=Path(output_file).name,
         media_type="application/octet-stream"
+    )
+
+
+@app.get("/quast/{job_id}/{report_name}")
+async def get_quast_report(job_id: str, report_name: str):
+    """
+    Get a QUAST report file for a specific job.
+    
+    Args:
+        job_id: The job identifier
+        report_name: Name of the report file (html, tsv, pdf)
+    
+    Returns:
+        The requested QUAST report file
+    """
+    job_info = get_job_info(job_id)
+    
+    if job_info["status"] != JobStatus.COMPLETED or "results" not in job_info:
+        raise HTTPException(
+            status_code=404,
+            detail="Job not completed or results not available"
+        )
+    
+    # Define allowed report types
+    allowed_reports = {
+        "report.html": "text/html",
+        "report.tsv": "text/tab-separated-values",
+        "transposed_report.tsv": "text/tab-separated-values",
+        "report.pdf": "application/pdf",
+        "icarus.html": "text/html"
+    }
+    
+    # Check if requested report is allowed
+    if report_name not in allowed_reports:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid report type. Must be one of: {list(allowed_reports.keys())}"
+        )
+    
+    # Get QUAST directory
+    quast_dir = job_info["results"].get("quast", {}).get("output_dir")
+    if not quast_dir or not os.path.exists(quast_dir):
+        # Try standard location
+        quast_dir = os.path.join(str(RESULTS_DIR), job_id, "quast")
+        if not os.path.exists(quast_dir):
+            raise HTTPException(
+                status_code=404,
+                detail="QUAST results not found"
+            )
+    
+    # Get report path
+    report_path = os.path.join(quast_dir, report_name)
+    if not os.path.exists(report_path):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Report {report_name} not found"
+        )
+    
+    # Return the report file
+    return FileResponse(
+        path=report_path,
+        media_type=allowed_reports[report_name],
+        filename=report_name
     )
 
 
