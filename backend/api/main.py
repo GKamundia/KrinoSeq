@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 from ..core.workflow import FilteringWorkflow
 from ..core.analysis import analyze_fasta_file
 from ..utils.config_validator import validate_pipeline_config
+from ..core.quast_parser import generate_quast_summary
 
 # Import API models
 from .models import (
@@ -565,6 +566,110 @@ async def get_quast_report(job_id: str, report_name: str):
         media_type=allowed_reports[report_name],
         filename=report_name
     )
+
+
+@app.get("/api/quast-results/{job_id}")
+async def get_quast_results(job_id: str) -> Dict[str, Any]:
+    """
+    Get detailed QUAST analysis results for a job.
+    
+    Args:
+        job_id: Job identifier
+    
+    Returns:
+        Detailed QUAST analysis results
+    """
+    job_info = get_job_info(job_id)
+    
+    if job_info["status"] != JobStatus.COMPLETED:
+        raise HTTPException(
+            status_code=404,
+            detail="Job not completed yet"
+        )
+    
+    if "results" not in job_info or "quast" not in job_info["results"]:
+        raise HTTPException(
+            status_code=404,
+            detail="No QUAST results available for this job"
+        )
+    
+    # Get QUAST output directory
+    quast_dir = job_info["results"]["quast"].get("output_dir")
+    if not quast_dir or not os.path.exists(quast_dir):
+        # Try standard location
+        quast_dir = os.path.join(str(RESULTS_DIR), job_id, "quast")
+        if not os.path.exists(quast_dir):
+            raise HTTPException(
+                status_code=404,
+                detail="QUAST results directory not found"
+            )
+    
+    # Generate a comprehensive summary from QUAST results
+    try:
+        quast_summary = generate_quast_summary(quast_dir)
+        
+        # Add URLs to access the QUAST reports
+        quast_summary["report_urls"] = {
+            "html": f"/quast/{job_id}/report.html",
+            "tsv": f"/quast/{job_id}/report.tsv",
+            "transposed_tsv": f"/quast/{job_id}/transposed_report.tsv",
+            "icarus": f"/quast/{job_id}/icarus.html"
+        }
+        
+        return quast_summary
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error processing QUAST results: {str(e)}"
+        )
+
+
+@app.post("/api/reference-genome/{job_id}")
+async def upload_reference_genome(
+    job_id: str,
+    reference_file: UploadFile = File(...),
+    use_for_quast: bool = Form(True)
+):
+    """
+    Upload a reference genome for use with QUAST analysis.
+    
+    Args:
+        job_id: Job identifier
+        reference_file: Reference genome file (FASTA)
+        use_for_quast: Whether to use this genome for QUAST analysis
+    
+    Returns:
+        Details about the uploaded reference genome
+    """
+    job_info = get_job_info(job_id)
+    if not job_info:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Job {job_id} not found"
+        )
+    
+    # Create references directory if it doesn't exist
+    job_dir = os.path.join(str(RESULTS_DIR), job_id)
+    references_dir = os.path.join(job_dir, "references")
+    os.makedirs(references_dir, exist_ok=True)
+    
+    # Save the uploaded reference genome
+    reference_path = os.path.join(references_dir, reference_file.filename)
+    with open(reference_path, "wb") as f:
+        shutil.copyfileobj(reference_file.file, f)
+    
+    # Update job info with reference genome
+    job_info["reference_genome"] = reference_path
+    
+    if use_for_quast:
+        job_info["use_reference_for_quast"] = True
+    
+    return {
+        "job_id": job_id,
+        "reference_genome": reference_path,
+        "filename": reference_file.filename,
+        "use_for_quast": use_for_quast
+    }
 
 
 @app.delete("/jobs/{job_id}")
