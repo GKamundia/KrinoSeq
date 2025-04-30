@@ -11,18 +11,25 @@ from ..core.parser import get_sequence_lengths
 from ..core.pipeline import FilterPipeline
 from ..core.output import filter_sequences_from_fasta, generate_results_summary, save_results_to_json
 from ..utils.config_validator import validate_pipeline_config
+from ..core.quast_analysis import compare_assemblies, run_quast_analysis
+from ..core.quast_parser import generate_quast_summary
 
 
 class FilteringWorkflow:
     """Manager for sequence filtering workflows."""
     
-    def __init__(self, input_file: str, output_dir: Optional[str] = None):
+    def __init__(self, input_file: str, output_dir: Optional[str] = None, 
+                 run_quast: bool = True, quast_options: Optional[Dict[str, Any]] = None,
+                 reference_genome: Optional[str] = None):
         """
         Initialize a filtering workflow.
         
         Args:
             input_file: Path to input FASTA file
             output_dir: Directory for output files (default: same as input)
+            run_quast: Whether to run QUAST analysis after filtering
+            quast_options: Options for QUAST analysis
+            reference_genome: Optional path to reference genome for QUAST
         """
         if not os.path.exists(input_file):
             raise FileNotFoundError(f"Input file not found: {input_file}")
@@ -38,6 +45,11 @@ class FilteringWorkflow:
         self.pipeline = FilterPipeline()
         self.seq_lengths: Dict[str, int] = {}
         self.filtered_seq_lengths: Dict[str, int] = {}
+        
+        # QUAST configuration
+        self.run_quast = run_quast
+        self.quast_options = quast_options or {}
+        self.reference_genome = reference_genome
     
     def configure_from_dict(self, config: List[Dict[str, Any]]) -> Tuple[bool, Optional[str]]:
         """
@@ -59,7 +71,7 @@ class FilteringWorkflow:
             self.pipeline.add_stage(stage["method"], **stage["params"])
         
         return True, None
-    
+
     def run(self) -> Dict[str, Any]:
         """
         Run the filtering workflow.
@@ -104,12 +116,67 @@ class FilteringWorkflow:
                 "sequences_written": sequences_written
             }
         
-        return {
+        # Run QUAST analysis if enabled
+        quast_results = None
+        if self.run_quast and os.path.exists(output_fasta):
+            try:
+                # Create quast directory in results folder
+                quast_dir = os.path.join(self.output_dir, f"{output_prefix}_quast")
+                os.makedirs(quast_dir, exist_ok=True)
+                
+                # Generate assembly labels
+                original_label = os.path.splitext(self.input_name)[0]
+                filtered_label = f"{original_label}_filtered"
+                
+                # Run QUAST comparison analysis
+                quast_results = compare_assemblies(
+                    original_assembly=self.input_file,
+                    filtered_assembly=output_fasta,
+                    output_dir=quast_dir,
+                    reference_genome=self.reference_genome,
+                    params=self.quast_options
+                )
+                
+                # Generate a summarized report
+                quast_summary = generate_quast_summary(quast_dir)
+                
+                # Add QUAST results to the summary
+                summary["quast"] = {
+                    "success": quast_results.get("success", False),
+                    "html_report": quast_results.get("html_report", ""),
+                    "output_dir": quast_dir,
+                    "summary": quast_summary
+                }
+                
+                # Add key improvement metrics if available
+                if "comparison" in quast_results:
+                    summary["quast"]["improvements"] = quast_results["comparison"]
+                
+                # Update the JSON report with QUAST results
+                save_results_to_json(summary, output_json)
+                
+            except Exception as e:
+                # Log the error but continue without QUAST results
+                import logging
+                logging.error(f"QUAST analysis failed: {str(e)}")
+                summary["quast"] = {
+                    "success": False,
+                    "error": str(e)
+                }
+        
+        # Return complete results
+        result = {
             "job_id": self.job_id,
             "output_file": output_fasta,
             "report_file": output_json,
             "sequences_written": sequences_written,
             "summary": summary
         }
+        
+        # Add QUAST results if available
+        if quast_results:
+            result["quast"] = quast_results
+        
+        return result
 
 
