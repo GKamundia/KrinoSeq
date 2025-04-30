@@ -129,9 +129,114 @@ export interface FilterResults {
   summary?: FilteringSummary;
   download_url?: string;
   visualization_data?: {
-    before: VisualizationData;
-    after: VisualizationData;
+    before?: VisualizationData;
+    after?: VisualizationData;
   };
   filtering_process?: FilterProcessStage[];
   message?: string;
+  quast_results?: QuastResults;
+  quast_report_url?: string;
+  quast_metrics_summary?: QuastMetricsSummary;
+  quast_improvement?: QuastImprovement;
+}
+
+/**
+ * Individual QUAST quality metric with improvement indicator
+ */
+export interface QuastMetric {
+  name: string;
+  value: number | string;
+  is_better?: boolean;  // Whether this metric is better than the original
+}
+
+/**
+ * QUAST results for a single assembly
+ */
+export interface QuastAssemblyResult {
+  name: string;
+  metrics: Record<string, number | string>;
+  contig_counts: Record<string, number>;
+  length_stats: Record<string, number>;
+  assembly_quality: Record<string, number>;
+  reference_metrics?: Record<string, number>;
+  gene_metrics?: Record<string, number>;
+}
+
+/**
+ * Comparison between original and filtered assemblies
+ */
+export interface QuastComparisonResult {
+  absolute_change: Record<string, number>;
+  percent_change: Record<string, number>;
+  improvements: Record<string, boolean>;
+  overall_improvement_score: number;
+  overall_improved: boolean;
+  positive_metric_count: number;
+  negative_metric_count: number;
+  total_evaluated_metrics: number;
+}
+
+/**
+ * Complete QUAST analysis results
+ */
+export interface QuastResults {
+  success: boolean;
+  html_report_path: string;
+  output_directory: string;
+  assemblies: QuastAssemblyResult[];
+  comparison?: QuastComparisonResult;
+  has_reference: boolean;
+  has_gene_prediction: boolean;
+  basic_metrics: Record<string, Record<string, any>>;
+  quality_metrics: Record<string, Record<string, any>>;
+  reference_metrics?: Record<string, Record<string, any>>;
+  gene_metrics?: Record<string, Record<string, any>>;
+  command_line?: string;
+  error_message?: string;
+}
+
+/**
+ * Simple QUAST metrics summary for quick display
+ */
+export interface QuastMetricsSummary {
+  has_reference: boolean;
+  has_gene_prediction: boolean;
+  assemblies: string[];
+  basic_metrics: Record<string, Record<string, any>>;
+}
+
+/**
+ * QUAST improvement summary
+ */
+export interface QuastImprovement {
+  overall_improved: boolean;
+  overall_score: number;
+}
+
+/**
+ * Report URLs for QUAST analysis
+ */
+export interface QuastReportUrls {
+  html: string;
+  tsv: string;
+  transposed_tsv: string;
+  icarus: string;
+}
+
+/**
+ * Response from the detailed QUAST results endpoint
+ */
+export interface QuastResultsResponse {
+  assemblies: string[];
+  has_reference: boolean;
+  has_gene_prediction: boolean;
+  basic_metrics: Record<string, Record<string, any>>;
+  contig_distribution: Record<string, any>;
+  quality_metrics: Record<string, Record<string, any>>;
+  reference_metrics?: Record<string, Record<string, any>>;
+  gene_metrics?: Record<string, Record<string, any>>;
+  report_path: string;
+  transposed_report_path?: string;
+  html_report_path: string;
+  report_urls: QuastReportUrls;
 }
