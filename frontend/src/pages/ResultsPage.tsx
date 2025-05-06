@@ -126,7 +126,7 @@ const ResultsPage: React.FC = () => {
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
     // If trying to navigate to tab 4 (QUAST) but QUAST results aren't available,
     // don't change the tab value
-    if (newValue === 4 && !hasQuastResults(results)) {
+    if (newValue === 4 && !hasQuastResults(results || undefined)) {
       return;
     }
     setTabValue(newValue);

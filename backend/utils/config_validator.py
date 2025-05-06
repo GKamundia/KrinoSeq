@@ -1,10 +1,11 @@
 """
-Configuration validation for filtering parameters.
+Configuration validation for filtering parameters and QUAST options.
 """
 
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional, Tuple, Union
 import json
 import os
+from pathlib import Path
 
 
 # Define valid parameter ranges for different filter methods
@@ -26,6 +27,25 @@ FILTER_METHOD_PARAMS = {
         "step": {"type": "int", "min": 1, "max": 1000, "default": 10}
     },
     "natural": {}  # No parameters needed
+}
+
+# Define valid parameter ranges for QUAST options
+QUAST_OPTIONS_PARAMS = {
+    "min_contig": {"type": "int", "min": 0, "default": 500},
+    "threads": {"type": "int", "min": 1, "max": 32, "default": 4},
+    "gene_finding": {"type": "bool", "default": True},
+    "conserved_genes_finding": {"type": "bool", "default": True},
+    "scaffold_gap_max_size": {"type": "int", "min": 1, "default": 1000},
+    "reference_genome": {"type": "str", "required": False},
+    "labels": {"type": "list", "required": False},
+    "large_genome": {"type": "bool", "default": False},
+    "eukaryote": {"type": "bool", "default": False},
+    "fungus": {"type": "bool", "default": False},
+    "prokaryote": {"type": "bool", "default": False},
+    "metagenome": {"type": "bool", "default": False},
+    "plots_format": {"type": "str", "allowed": ["png", "pdf", "ps"], "default": "png"},
+    "min_alignment": {"type": "int", "min": 0, "default": 65},
+    "ambiguity_usage": {"type": "str", "allowed": ["one", "all", "none"], "default": "one"}
 }
 
 
@@ -237,3 +257,134 @@ def load_config_from_file(config_path: str) -> Tuple[bool, Optional[str], List[D
         return False, f"Error loading configuration file: {str(e)}", []
     
     return validate_pipeline_config(config)
+
+
+def validate_quast_options(options: Dict[str, Any]) -> Tuple[bool, Optional[str], Dict[str, Any]]:
+    """
+    Validate QUAST configuration options.
+    
+    Args:
+        options: Dictionary of QUAST options
+        
+    Returns:
+        Tuple of (is_valid, error_message, validated_options)
+    """
+    validated_options = {}
+    
+    # If no options provided, return defaults
+    if not options:
+        return True, None, {param_name: param_config["default"] 
+                           for param_name, param_config in QUAST_OPTIONS_PARAMS.items() 
+                           if "default" in param_config}
+    
+    # Validate all provided options
+    for param_name, param_value in options.items():
+        if param_name not in QUAST_OPTIONS_PARAMS:
+            return False, f"Unknown QUAST parameter: {param_name}", {}
+        
+        param_config = QUAST_OPTIONS_PARAMS[param_name]
+        
+        # Skip validation for None values for optional parameters
+        if param_value is None and not param_config.get("required", False):
+            continue
+        
+        # Type validation
+        if param_config.get("type") == "int":
+            if not isinstance(param_value, (int, float)) or not float(param_value).is_integer():
+                return False, f"Parameter {param_name} must be an integer", {}
+            param_value = int(param_value)
+        elif param_config.get("type") == "float":
+            if not isinstance(param_value, (int, float)):
+                return False, f"Parameter {param_name} must be a number", {}
+            param_value = float(param_value)
+        elif param_config.get("type") == "bool":
+            if not isinstance(param_value, bool):
+                # Try to convert string representations to bool
+                if isinstance(param_value, str):
+                    if param_value.lower() in ('true', 'yes', '1'):
+                        param_value = True
+                    elif param_value.lower() in ('false', 'no', '0'):
+                        param_value = False
+                    else:
+                        return False, f"Parameter {param_name} has invalid boolean value: {param_value}", {}
+                else:
+                    return False, f"Parameter {param_name} must be a boolean", {}
+        elif param_config.get("type") == "str":
+            if not isinstance(param_value, str):
+                return False, f"Parameter {param_name} must be a string", {}
+            # If allowed values are specified, check against them
+            if "allowed" in param_config and param_value not in param_config["allowed"]:
+                return False, f"Parameter {param_name} must be one of: {param_config['allowed']}", {}
+        elif param_config.get("type") == "list":
+            if not isinstance(param_value, list):
+                # Try to convert comma-separated string to list
+                if isinstance(param_value, str):
+                    param_value = [item.strip() for item in param_value.split(',')]
+                else:
+                    return False, f"Parameter {param_name} must be a list or comma-separated string", {}
+        
+        # Range validation for numeric types
+        if param_config.get("type") in ["int", "float"]:
+            if "min" in param_config and param_value < param_config["min"]:
+                return False, f"Parameter {param_name} must be >= {param_config['min']}", {}
+            if "max" in param_config and param_value > param_config["max"]:
+                return False, f"Parameter {param_name} must be <= {param_config['max']}", {}
+        
+        # Special validation for reference genome
+        if param_name == "reference_genome" and param_value:
+            # Check if the reference genome file exists
+            if not os.path.exists(param_value):
+                # The path might be a relative path or will be uploaded later
+                # Just log a warning in this case rather than rejecting
+                import logging
+                logging.warning(f"Reference genome path may not exist: {param_value}")
+                
+                # Check if it's a valid path format at least
+                try:
+                    Path(param_value)
+                except Exception:
+                    return False, f"Invalid reference genome path format: {param_value}", {}
+        
+        validated_options[param_name] = param_value
+    
+    # Add defaults for missing optional parameters
+    for param_name, param_config in QUAST_OPTIONS_PARAMS.items():
+        if param_name not in validated_options and "default" in param_config:
+            validated_options[param_name] = param_config["default"]
+    
+    return True, None, validated_options
+
+
+def validate_complete_config(config: Dict[str, Any]) -> Tuple[bool, Optional[str], Dict[str, Any]]:
+    """
+    Validate the complete configuration including filter pipeline and QUAST options.
+    
+    Args:
+        config: Dictionary with 'stages' list for filter pipeline and optional 'quastOptions'
+        
+    Returns:
+        Tuple of (is_valid, error_message, validated_config)
+    """
+    validated_config = {}
+    
+    # Validate filter stages
+    if "stages" not in config:
+        return False, "Missing required 'stages' configuration", {}
+    
+    stages_config = config["stages"]
+    is_valid, error, validated_stages = validate_pipeline_config(stages_config)
+    if not is_valid:
+        return False, f"Invalid filter pipeline configuration: {error}", {}
+    
+    validated_config["stages"] = validated_stages
+    
+    # Validate QUAST options if present
+    if "quastOptions" in config:
+        quast_options = config["quastOptions"]
+        is_valid, error, validated_quast_options = validate_quast_options(quast_options)
+        if not is_valid:
+            return False, f"Invalid QUAST configuration: {error}", {}
+        
+        validated_config["quastOptions"] = validated_quast_options
+    
+    return True, None, validated_config
