@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 from ..core.workflow import FilteringWorkflow
 from ..core.analysis import analyze_fasta_file
 from ..utils.config_validator import validate_pipeline_config
-from ..core.quast_parser import generate_quast_summary
+from ..core.quast_parser import generate_quast_summary, find_quast_report_path
 
 # Import API models
 from .models import (
@@ -353,8 +353,8 @@ async def run_filter_job(job_id: str):
         # Create workflow with QUAST enabled
         workflow = FilteringWorkflow(
             input_file=job_info["file_path"],
-            output_dir=str(job_dirs["job"]),  # Use job directory for output
-            run_quast=True,  # Enable QUAST
+            output_dir=str(job_dirs["job"]),
+            run_quast=True,
             quast_options={"threads": 4, "gene_finding": True},
             reference_genome=reference_genome
         )
@@ -387,18 +387,22 @@ async def run_filter_job(job_id: str):
             
             # If QUAST output is not in the standard quast directory, copy it there
             if os.path.normpath(quast_dir) != os.path.normpath(str(job_dirs["quast"])):
-                # Copy QUAST results to the standard location
-                for file in os.listdir(quast_dir):
-                    src_file = os.path.join(quast_dir, file)
-                    dst_file = os.path.join(job_dirs["quast"], file)
-                    
+                import shutil
+                import os
+                
+                # Create standard quast directory if it doesn't exist
+                os.makedirs(str(job_dirs["quast"]), exist_ok=True)
+                
+                # Copy all files from quast_dir to the standard directory
+                for file_name in os.listdir(quast_dir):
+                    src_file = os.path.join(quast_dir, file_name)
+                    dst_file = os.path.join(str(job_dirs["quast"]), file_name)
                     if os.path.isfile(src_file):
                         shutil.copy2(src_file, dst_file)
-                    elif os.path.isdir(src_file):
-                        shutil.copytree(src_file, dst_file, dirs_exist_ok=True)
                 
-                # Update the quast directory in results
-                results["quast"]["output_dir"] = str(job_dirs["quast"])
+                # Update quast_dir to the standard directory
+                quast_dir = str(job_dirs["quast"])
+                results["quast"]["output_dir"] = quast_dir
             
             # Create metadata file
             create_quast_metadata(
@@ -408,6 +412,28 @@ async def run_filter_job(job_id: str):
                 quast_dir=str(job_dirs["quast"]),
                 reference_genome=reference_genome
             )
+            
+            # Generate a summarized version of the QUAST results
+            try:
+                quast_summary = generate_quast_summary(quast_dir)
+                
+                # Add QUAST summary to results
+                results["quast_metrics_summary"] = {
+                    "has_reference": quast_summary.get("has_reference", False),
+                    "has_gene_prediction": quast_summary.get("has_gene_prediction", False),
+                    "assemblies": quast_summary.get("assemblies", []),
+                    "basic_metrics": quast_summary.get("basic_metrics", {})
+                }
+                
+                # Add improvement metrics if available
+                if "comparison" in results["quast"]:
+                    results["quast_improvement"] = {
+                        "overall_improved": results["quast"]["comparison"].get("overall_improved", False),
+                        "overall_score": results["quast"]["comparison"].get("overall_improvement_score", 0)
+                    }
+            except Exception as e:
+                import logging
+                logging.error(f"Error generating QUAST summary: {str(e)}")
         
         # Store results
         job_info["status"] = JobStatus.COMPLETED
@@ -552,8 +578,18 @@ async def get_quast_report(job_id: str, report_name: str):
                 detail="QUAST results not found"
             )
     
-    # Get report path
-    report_path = os.path.join(quast_dir, report_name)
+    # Find the actual report path using the find_quast_report_path function
+    report_tsv_path = find_quast_report_path(quast_dir)
+    if not report_tsv_path:
+        raise HTTPException(
+            status_code=404,
+            detail="QUAST report not found"
+        )
+    
+    # The requested file should be in the same directory
+    report_dir = os.path.dirname(report_tsv_path)
+    report_path = os.path.join(report_dir, report_name)
+    
     if not os.path.exists(report_path):
         raise HTTPException(
             status_code=404,

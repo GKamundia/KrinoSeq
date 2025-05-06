@@ -459,13 +459,16 @@ def generate_quast_summary(quast_results_dir: str) -> Dict[str, Any]:
         "gene_metrics": {}
     }
     
-    # Parse the report files
-    report_path = os.path.join(quast_results_dir, "report.tsv")
-    transposed_path = os.path.join(quast_results_dir, "transposed_report.tsv")
-    
-    if not os.path.exists(report_path):
-        logger.error(f"QUAST report not found at {report_path}")
+    # Find the report files
+    report_path = find_quast_report_path(quast_results_dir)
+    if not report_path:
+        logger.error(f"QUAST report not found in or under directory: {quast_results_dir}")
         return summary
+    
+    # Also find the transposed report in the same directory
+    report_dir = os.path.dirname(report_path)
+    transposed_path = os.path.join(report_dir, "transposed_report.tsv")
+    html_report_path = os.path.join(report_dir, "report.html")
     
     # Parse the main report
     metrics = parse_quast_report_file(report_path)
@@ -496,7 +499,7 @@ def generate_quast_summary(quast_results_dir: str) -> Dict[str, Any]:
     # Add report paths
     summary["report_path"] = report_path
     summary["transposed_report_path"] = transposed_path if os.path.exists(transposed_path) else None
-    summary["html_report_path"] = os.path.join(quast_results_dir, "report.html")
+    summary["html_report_path"] = html_report_path if os.path.exists(html_report_path) else None
     
     return summary
 
@@ -574,3 +577,44 @@ def get_reference_alignment_stats(metrics: Dict[str, Dict[str, Any]]) -> Dict[st
             alignment_stats[assembly_name]["percent_aligned"] = 0
     
     return alignment_stats
+
+
+def find_quast_report_path(base_dir: str) -> Optional[str]:
+    """
+    Find the QUAST report file by searching in the base directory
+    and potential subdirectories created by QUAST.
+    
+    Args:
+        base_dir: Base directory where QUAST was executed
+        
+    Returns:
+        Path to the report.tsv file or None if not found
+    """
+    # Check if report exists directly in the base directory
+    direct_path = os.path.join(base_dir, "report.tsv")
+    if os.path.exists(direct_path):
+        return direct_path
+    
+    # Check in quast_results subdirectory if exists
+    quast_results_dir = os.path.join(base_dir, "quast_results")
+    if os.path.exists(quast_results_dir):
+        # Look for the most recent result directory (they're named with timestamps)
+        result_dirs = [d for d in os.listdir(quast_results_dir) 
+                      if os.path.isdir(os.path.join(quast_results_dir, d)) and d.startswith("results_")]
+        
+        if result_dirs:
+            # Sort by modification time (newest first)
+            result_dirs.sort(key=lambda d: os.path.getmtime(os.path.join(quast_results_dir, d)), reverse=True)
+            
+            # Check the most recent directory
+            for result_dir in result_dirs:
+                report_path = os.path.join(quast_results_dir, result_dir, "report.tsv")
+                if os.path.exists(report_path):
+                    return report_path
+    
+    # If we're using the 'combined_reference' option, QUAST might create another subdirectory level
+    for root, dirs, files in os.walk(base_dir):
+        if "report.tsv" in files:
+            return os.path.join(root, "report.tsv")
+    
+    return None

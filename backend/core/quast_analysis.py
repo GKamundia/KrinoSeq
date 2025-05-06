@@ -64,23 +64,13 @@ def run_quast_analysis(
 ) -> Dict[str, Any]:
     """
     Run QUAST on one or more genome assemblies.
-    
-    Args:
-        input_files: Path(s) to input FASTA file(s)
-        output_dir: Directory to store QUAST results
-        reference_genome: Optional path to reference genome
-        labels: Optional list of labels for the input files
-        params: Optional dictionary of QUAST parameters
-        progress_callback: Optional callback function for progress updates
-    
-    Returns:
-        Dictionary with QUAST execution results
     """
     # Ensure output directory exists
     os.makedirs(output_dir, exist_ok=True)
     
     # Check if QUAST is available in WSL
     if not check_command_exists("quast.py"):
+        logger.error("QUAST is not available in WSL environment")
         return {
             "error": "QUAST is not available in WSL environment",
             "success": False,
@@ -134,56 +124,84 @@ def run_quast_analysis(
     # Join command parts with spaces
     command_str = " ".join(command)
     
+    logger.info(f"Running QUAST command: {command_str}")
+    
     # Run QUAST with progress monitoring
-    if progress_callback:
-        stdout, stderr, returncode = run_with_progress(
-            command_str,
-            timeout=3600,  # 1 hour timeout
-            progress_callback=progress_callback,
-            # QUAST doesn't provide clear progress percentages, so we'll use a heuristic
-            progress_regex=r"Stage (\d+)/\d+"
-        )
-    else:
-        stdout, stderr, returncode = run_wsl_command(
-            command_str,
-            timeout=3600,  # 1 hour timeout
-        )
-    
-    # Check if QUAST ran successfully
-    success = returncode == 0
-    
-    # Parse results if successful
-    result = {
-        "success": success,
-        "output_dir": output_dir,
-        "command": command_str,
-        "returncode": returncode,
-    }
-    
-    if success:
-        # Parse QUAST results
-        try:
-            report_path = os.path.join(output_dir, "report.tsv")
-            transposed_path = os.path.join(output_dir, "transposed_report.tsv")
-            
-            if os.path.exists(report_path):
-                result["metrics"] = parse_quast_report(report_path)
+    try:
+        if progress_callback:
+            stdout, stderr, returncode = run_with_progress(
+                command_str,
+                timeout=3600,  # 1 hour timeout
+                progress_callback=progress_callback,
+                # QUAST doesn't provide clear progress percentages, so we'll use a heuristic
+                progress_regex=r"Stage (\d+)/\d+"
+            )
+        else:
+            stdout, stderr, returncode = run_wsl_command(
+                command_str,
+                timeout=3600,  # 1 hour timeout
+            )
+        
+        # Check if QUAST ran successfully
+        success = returncode == 0
+        
+        # Log the results for debugging
+        logger.info(f"QUAST return code: {returncode}")
+        if stderr:
+            logger.warning(f"QUAST stderr: {stderr}")
+        
+        # Parse results if successful
+        result = {
+            "success": success,
+            "output_dir": output_dir,
+            "command": command_str,
+            "returncode": returncode,
+        }
+        
+        # Check if report files were actually created
+        # Use the find_quast_report_path function to locate the report
+        from ..core.quast_parser import find_quast_report_path
+        report_path = find_quast_report_path(output_dir)
+        
+        if success and not report_path:
+            logger.error(f"QUAST did not generate report file in directory: {output_dir}")
+            result["success"] = False
+            result["error"] = "QUAST report files not generated"
+            return result
+        
+        if success:
+            # Parse QUAST results
+            try:
+                # Use the found report path
+                result_dir = os.path.dirname(report_path)
+                transposed_path = os.path.join(result_dir, "transposed_report.tsv")
                 
-            if os.path.exists(transposed_path):
-                result["transposed_metrics"] = parse_transposed_report(transposed_path)
+                if os.path.exists(report_path):
+                    result["metrics"] = parse_quast_report(report_path)
+                    
+                if os.path.exists(transposed_path):
+                    result["transposed_metrics"] = parse_transposed_report(transposed_path)
+                    
+                # Extract summary metrics
+                result["summary"] = extract_key_metrics(result.get("metrics", {}))
                 
-            # Extract summary metrics
-            result["summary"] = extract_key_metrics(result.get("metrics", {}))
-            
-            # Include HTML report path for frontend reference
-            result["html_report"] = os.path.join(output_dir, "report.html")
-        except Exception as e:
-            logger.error(f"Error parsing QUAST results: {str(e)}")
-            result["parse_error"] = str(e)
-    else:
-        result["error"] = stderr
-    
-    return result
+                # Include HTML report path for frontend reference
+                result["html_report"] = os.path.join(result_dir, "report.html")
+            except Exception as e:
+                logger.error(f"Error parsing QUAST results: {str(e)}")
+                result["parse_error"] = str(e)
+        else:
+            result["error"] = stderr
+        
+        return result
+    except Exception as e:
+        logger.error(f"Exception running QUAST: {str(e)}")
+        return {
+            "success": False,
+            "output_dir": output_dir,
+            "error": f"Error executing QUAST: {str(e)}",
+            "command": command_str
+        }
 
 
 def parse_quast_report(report_path: str) -> Dict[str, Dict[str, Any]]:
