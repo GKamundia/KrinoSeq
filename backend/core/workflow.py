@@ -179,4 +179,64 @@ class FilteringWorkflow:
         
         return result
 
+    def run_quast(self, original_file, filtered_file, quast_options=None):
+        """
+        Run QUAST analysis to compare original and filtered assemblies.
+        
+        Args:
+            original_file: Path to original assembly FASTA
+            filtered_file: Path to filtered assembly FASTA
+            quast_options: Dictionary of QUAST options
+            
+        Returns:
+            Dictionary with QUAST analysis results
+        """
+        import os
+        import logging
+        from ..utils.quast_config import QUAST_EXECUTABLE_STR
+        
+        # Ensure we have a quast options dict
+        if quast_options is None:
+            quast_options = {}
+        
+        # Check if quast_path is specified in options, if not, use the default from config
+        if "quast_path" not in quast_options:
+            quast_options["quast_path"] = QUAST_EXECUTABLE_STR
+        
+        logging.info(f"Using QUAST executable: {quast_options['quast_path']}")
+        
+        try:
+            # Create quast directory with standardized name
+            quast_dir = os.path.join(self.output_dir, "quast")
+            os.makedirs(quast_dir, exist_ok=True)
+            
+            # Generate assembly labels
+            original_label = os.path.basename(os.path.splitext(original_file)[0])
+            filtered_label = os.path.basename(os.path.splitext(filtered_file)[0])
+            
+            # Run QUAST comparison analysis
+            results = compare_assemblies(
+                original_assembly=original_file,
+                filtered_assembly=filtered_file,
+                output_dir=quast_dir,
+                reference_genome=self.reference_genome,
+                params=quast_options
+            )
+            
+            # Log success or error
+            if results.get("success", False):
+                logging.info(f"QUAST analysis completed successfully: {quast_dir}")
+            else:
+                logging.error(f"QUAST analysis failed: {results.get('error', 'Unknown error')}")
+            
+            return results
+            
+        except Exception as e:
+            logging.error(f"Error running QUAST analysis: {str(e)}")
+            return {
+                "success": False,
+                "error": f"Error running QUAST analysis: {str(e)}",
+                "output_dir": quast_dir if 'quast_dir' in locals() else None
+            }
+
 

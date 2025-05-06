@@ -590,14 +590,19 @@ def find_quast_report_path(base_dir: str) -> Optional[str]:
     Returns:
         Path to the report.tsv file or None if not found
     """
+    logger.info(f"Searching for QUAST report in: {base_dir}")
+    
     # Check if report exists directly in the base directory
     direct_path = os.path.join(base_dir, "report.tsv")
     if os.path.exists(direct_path):
+        logger.info(f"Found report.tsv directly in base directory: {direct_path}")
         return direct_path
     
     # Check in quast_results subdirectory if exists
     quast_results_dir = os.path.join(base_dir, "quast_results")
     if os.path.exists(quast_results_dir):
+        logger.info(f"Found quast_results directory: {quast_results_dir}")
+        
         # Look for the most recent result directory (they're named with timestamps)
         result_dirs = [d for d in os.listdir(quast_results_dir) 
                       if os.path.isdir(os.path.join(quast_results_dir, d)) and d.startswith("results_")]
@@ -605,16 +610,32 @@ def find_quast_report_path(base_dir: str) -> Optional[str]:
         if result_dirs:
             # Sort by modification time (newest first)
             result_dirs.sort(key=lambda d: os.path.getmtime(os.path.join(quast_results_dir, d)), reverse=True)
+            logger.info(f"Found result directories: {result_dirs}")
             
             # Check the most recent directory
             for result_dir in result_dirs:
                 report_path = os.path.join(quast_results_dir, result_dir, "report.tsv")
                 if os.path.exists(report_path):
+                    logger.info(f"Found report.tsv in: {report_path}")
                     return report_path
     
     # If we're using the 'combined_reference' option, QUAST might create another subdirectory level
+    logger.info("Performing deep search for report.tsv")
     for root, dirs, files in os.walk(base_dir):
         if "report.tsv" in files:
-            return os.path.join(root, "report.tsv")
+            report_path = os.path.join(root, "report.tsv")
+            logger.info(f"Found report.tsv during deep search: {report_path}")
+            return report_path
     
+    # Try looking for manually placed QUAST results
+    quast_comparison_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(base_dir))), "quast_comparison")
+    if os.path.exists(quast_comparison_dir):
+        logger.info(f"Looking in quast_comparison directory: {quast_comparison_dir}")
+        for root, dirs, files in os.walk(quast_comparison_dir):
+            if "report.tsv" in files:
+                report_path = os.path.join(root, "report.tsv")
+                logger.info(f"Found report.tsv in quast_comparison: {report_path}")
+                return report_path
+    
+    logger.error(f"No QUAST report.tsv found in or under directory: {base_dir}")
     return None

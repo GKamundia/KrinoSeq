@@ -13,6 +13,7 @@ from pathlib import Path
 
 from ..utils.wsl_path_converter import convert_windows_to_wsl_path, convert_wsl_to_windows_path
 from ..utils.wsl_executor import run_wsl_command, check_command_exists, run_with_progress, WSLExecutionError
+from ..utils.quast_config import get_wsl_quast_path
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -68,11 +69,14 @@ def run_quast_analysis(
     # Ensure output directory exists
     os.makedirs(output_dir, exist_ok=True)
     
-    # Check if QUAST is available in WSL
-    if not check_command_exists("quast.py"):
-        logger.error("QUAST is not available in WSL environment")
+    # Get the QUAST path in WSL format
+    quast_path = get_wsl_quast_path()
+    
+    # Check if QUAST exists at the specified path
+    if not os.path.exists(quast_path.replace('/mnt/c', 'C:')):
+        logger.error(f"QUAST is not available at path: {quast_path}")
         return {
-            "error": "QUAST is not available in WSL environment",
+            "error": f"QUAST executable not found at {quast_path}",
             "success": False,
             "output_dir": output_dir
         }
@@ -85,8 +89,8 @@ def run_quast_analysis(
     wsl_input_files = [convert_windows_to_wsl_path(f) for f in input_files]
     wsl_output_dir = convert_windows_to_wsl_path(output_dir)
     
-    # Build QUAST command
-    command = ["quast.py"]
+    # Build QUAST command using the full path
+    command = [quast_path]  # Use full path to QUAST
     
     # Add input files
     command.extend(wsl_input_files)

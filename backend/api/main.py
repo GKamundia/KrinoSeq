@@ -345,17 +345,30 @@ async def run_filter_job(job_id: str):
         # Create job directories including QUAST subdirectory
         job_dirs = setup_job_directories(job_id)
         
+        # Import QUAST config
+        from ..utils.quast_config import QUAST_EXECUTABLE_STR
+        
+        # Log QUAST path for debugging
+        import logging
+        logging.info(f"Using QUAST executable: {QUAST_EXECUTABLE_STR}")
+        
         # Determine if reference genome is provided
         reference_genome = None
         if "reference_genome" in job_info:
             reference_genome = job_info["reference_genome"]
+            logging.info(f"Using reference genome: {reference_genome}")
         
         # Create workflow with QUAST enabled
         workflow = FilteringWorkflow(
             input_file=job_info["file_path"],
             output_dir=str(job_dirs["job"]),
             run_quast=True,
-            quast_options={"threads": 4, "gene_finding": True},
+            quast_options={
+                "threads": 4, 
+                "gene_finding": True,
+                # Add custom path to QUAST executable
+                "quast_path": QUAST_EXECUTABLE_STR
+            },
             reference_genome=reference_genome
         )
         
