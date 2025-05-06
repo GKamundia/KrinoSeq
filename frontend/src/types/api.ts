@@ -36,6 +36,27 @@ export interface FilterStageConfig {
 
 export interface FilterPipelineConfig {
   stages: FilterStageConfig[];
+  quastOptions?: QuastOptions;
+  jobId?: string;
+}
+
+// Ensure the QuastOptions interface matches the backend model
+export interface QuastOptions {
+  min_contig?: number;
+  threads?: number;
+  gene_finding?: boolean;
+  conserved_genes_finding?: boolean;
+  scaffold_gap_max_size?: number;
+  reference_genome?: string;
+  labels?: string[];
+  large_genome?: boolean;
+  eukaryote?: boolean;
+  fungus?: boolean;
+  prokaryote?: boolean;
+  metagenome?: boolean;
+  plots_format?: string;
+  min_alignment?: number;
+  ambiguity_usage?: string;
 }
 
 export interface BasicStats {

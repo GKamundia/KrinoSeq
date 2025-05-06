@@ -29,6 +29,9 @@ const ConfigurePage: React.FC = () => {
   const [jobInfo, setJobInfo] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [filterConfig, setFilterConfig] = useState<FilterPipelineConfig | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchJobStatus = async () => {
@@ -76,6 +79,7 @@ const ConfigurePage: React.FC = () => {
     
     try {
       setLoading(true);
+      setFilterConfig(values);
       await configureFilter(jobId, values);
       handleNext();
     } catch (err) {
@@ -86,17 +90,32 @@ const ConfigurePage: React.FC = () => {
     }
   };
 
-  const handleStartFiltering = async () => {
-    if (!jobId) return;
-    
+  const handleRunFiltering = async () => {
     try {
-      setLoading(true);
-      await executeFilter(jobId);
+      // Check if jobId and filterConfig are defined before proceeding
+      if (!jobId) {
+        setErrorMessage('Job ID is missing. Please try again or start a new upload.');
+        return;
+      }
+      
+      if (!filterConfig) {
+        setErrorMessage('Filter configuration is missing. Please configure your filters before proceeding.');
+        return;
+      }
+
+      setIsProcessing(true);
+      
+      // Now TypeScript knows both parameters are definitely defined
+      await configureFilter(jobId, filterConfig);
+      await executeFilter(jobId, filterConfig);
+      
+      // Navigate to results page
       navigate(`/results/${jobId}`);
-    } catch (err) {
-      console.error('Error executing filter:', err);
-      setError('Failed to start filtering process');
-      setLoading(false);
+    } catch (error) {
+      console.error('Error running filtering:', error);
+      setErrorMessage('Failed to run filtering process. Please try again.');
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -191,7 +210,14 @@ const ConfigurePage: React.FC = () => {
                     method: FilterMethod.ADAPTIVE,
                     params: {}
                   }
-                ]
+                ],
+                quastOptions: {
+                  min_contig: 500,
+                  threads: 4,
+                  gene_finding: true,
+                  conserved_genes_finding: true
+                },
+                jobId: jobId
               }}
               validationSchema={Yup.object({
                 stages: Yup.array().of(
@@ -274,8 +300,8 @@ const ConfigurePage: React.FC = () => {
               <Button
                 variant="contained"
                 color="primary"
-                onClick={handleStartFiltering}
-                disabled={loading}
+                onClick={handleRunFiltering}
+                disabled={isProcessing}
               >
                 Start Filtering
               </Button>

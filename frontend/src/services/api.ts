@@ -50,8 +50,11 @@ export const configureFilter = async (jobId: string, config: FilterPipelineConfi
   return response.data;
 };
 
-export const executeFilter = async (jobId: string) => {
-  const response = await API.post(`/filter/${jobId}`);
+export const executeFilter = async (jobId: string, config: FilterPipelineConfig) => {
+  const response = await API.post(`/filter/${jobId}`, {
+    stages: config.stages,
+    quastOptions: config.quastOptions
+  });
   return response.data;
 };
 
