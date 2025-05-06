@@ -130,17 +130,14 @@ export async function uploadReferenceGenome(
     formData.append('reference_file', file);
     formData.append('use_for_quast', useForQuast.toString());
     
-    const response = await fetch(`/api/reference-genome/${jobId}`, {
-      method: 'POST',
-      body: formData,
+    // Use the API instance with the configured baseURL
+    const response = await API.post(`/reference-genome/${jobId}`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
     });
     
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.detail || `Error uploading reference genome: ${response.statusText}`);
-    }
-    
-    return await response.json();
+    return response.data;
   } catch (error) {
     console.error('Failed to upload reference genome:', error);
     throw error;

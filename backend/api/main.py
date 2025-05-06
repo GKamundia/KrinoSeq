@@ -624,7 +624,7 @@ async def get_quast_results(job_id: str) -> Dict[str, Any]:
         )
 
 
-@app.post("/api/reference-genome/{job_id}")
+@app.post("/reference-genome/{job_id}")
 async def upload_reference_genome(
     job_id: str,
     reference_file: UploadFile = File(...),
