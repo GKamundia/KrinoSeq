@@ -15,13 +15,15 @@ import {
 } from '@mui/material';
 import DownloadIcon from '@mui/icons-material/Download';
 import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
-import { getFilterResults, getJobStatus } from '../services/api';
+import AssessmentIcon from '@mui/icons-material/Assessment'; // New icon for QUAST tab
+import { getFilterResults, getJobStatus, hasQuastResults } from '../services/api'; // Added hasQuastResults
 import { JobStatus, FilterResults } from '../types/api';
 import StatusAlert from '../components/StatusAlert';
 import SequenceStatsCard from '../components/SequenceStatsCard';
 import LengthDistributionChart from '../components/LengthDistributionChart';
 import FilteringResultsSummary from '../components/FilteringResultsSummary';
 import FilteringProcessDetails from '../components/FilteringProcessDetails';
+import QuastResultsTab from '../components/QuastResultsTab'; // Add import for QUAST tab
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -122,6 +124,11 @@ const ResultsPage: React.FC = () => {
   }, [jobId, jobInfo?.status]);
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
+    // If trying to navigate to tab 4 (QUAST) but QUAST results aren't available,
+    // don't change the tab value
+    if (newValue === 4 && !hasQuastResults(results)) {
+      return;
+    }
     setTabValue(newValue);
   };
 
@@ -216,6 +223,15 @@ const ResultsPage: React.FC = () => {
                 <Tab label="Original Contigs" id="results-tab-1" />
                 <Tab label="Filtered Contigs" id="results-tab-2" />
                 <Tab label="Filtering Process" id="results-tab-3" />
+                {/* Add QUAST Analysis tab only if results are available */}
+                {hasQuastResults(results) && (
+                  <Tab 
+                    label="QUAST Analysis" 
+                    id="results-tab-4" 
+                    icon={<AssessmentIcon fontSize="small" />} 
+                    iconPosition="start"
+                  />
+                )}
               </Tabs>
             </Box>
             
@@ -267,6 +283,26 @@ const ResultsPage: React.FC = () => {
                         />
                       </Grid>
                     </Grid>
+                    
+                    {hasQuastResults(results) && (
+                      <Box sx={{ mt: 3, p: 2, bgcolor: 'info.light', borderRadius: 1 }}>
+                        <Typography variant="subtitle2" gutterBottom>
+                          QUAST Quality Assessment Available
+                        </Typography>
+                        <Typography variant="body2">
+                          Detailed assembly quality metrics are available in the QUAST Analysis tab.
+                          These metrics provide insights into the impact of filtering on assembly quality.
+                        </Typography>
+                        <Button 
+                          variant="outlined" 
+                          size="small" 
+                          sx={{ mt: 1 }}
+                          onClick={() => setTabValue(4)}
+                        >
+                          View QUAST Analysis
+                        </Button>
+                      </Box>
+                    )}
                   </Grid>
                 </Grid>
               </TabPanel>
@@ -348,6 +384,20 @@ const ResultsPage: React.FC = () => {
               <TabPanel value={tabValue} index={3}>
                 <FilteringProcessDetails filteringProcess={results?.filtering_process || []} />
               </TabPanel>
+
+              {/* Add new TabPanel for QUAST Analysis */}
+              {hasQuastResults(results) && (
+                <TabPanel value={tabValue} index={4}>
+                  <QuastResultsTab 
+                    jobId={jobId!} 
+                    filterResults={results}
+                    onError={(message) => {
+                      // Handle errors, could set a state variable if needed
+                      console.error("QUAST error:", message);
+                    }} 
+                  />
+                </TabPanel>
+              )}
             </CardContent>
           </Card>
         </Box>
