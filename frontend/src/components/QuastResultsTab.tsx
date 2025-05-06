@@ -11,7 +11,9 @@ import {
   CircularProgress,
   Alert,
   AlertTitle,
-  Chip
+  Chip,
+  Card,
+  CardContent
 } from '@mui/material';
 import { FilterResults, QuastResults, QuastResultsResponse } from '../types/api';
 import { 

@@ -111,6 +111,51 @@ const CustomTooltip = ({ active, payload, label }: TooltipProps<number, string>)
   return null;
 };
 
+// Custom tick component that handles text wrapping
+const CustomYAxisTick = (props: any) => {
+  const { x, y, payload } = props;
+  
+  // Split long text into multiple lines (adjust width as needed)
+  const maxCharsPerLine = 20;
+  const text = payload.value;
+  
+  // Simple word wrap logic
+  const words = text.split(' ');
+  const lines = [];
+  let currentLine = '';
+  
+  words.forEach((word: string) => {
+    if ((currentLine + ' ' + word).length <= maxCharsPerLine) {
+      currentLine = currentLine ? currentLine + ' ' + word : word;
+    } else {
+      lines.push(currentLine);
+      currentLine = word;
+    }
+  });
+  
+  if (currentLine) {
+    lines.push(currentLine);
+  }
+  
+  return (
+    <g transform={`translate(${x},${y})`}>
+      {lines.map((line, i) => (
+        <text 
+          key={i}
+          x={-10} 
+          y={i * 12} 
+          dy={5}
+          textAnchor="end"
+          fontSize={10}
+          fill="#666"
+        >
+          {line}
+        </text>
+      ))}
+    </g>
+  );
+};
+
 const QuastComparisonChart: React.FC<QuastComparisonChartProps> = ({ 
   title = "Assembly Comparison",
   originalAssembly, 
@@ -215,11 +260,7 @@ const QuastComparisonChart: React.FC<QuastComparisonChartProps> = ({
                   dataKey="name"
                   type="category"
                   width={120}
-                  tick={{
-                    fontSize: 12,
-                    width: 100,
-                    wordWrap: 'break-word',
-                  }}
+                  tick={<CustomYAxisTick />} // Use custom tick component instead of wordWrap
                 />
                 <Tooltip content={<CustomTooltip />} />
                 <Legend />
