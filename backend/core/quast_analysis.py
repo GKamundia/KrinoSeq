@@ -12,7 +12,7 @@ from typing import Dict, List, Tuple, Optional, Any, Union, Callable
 from pathlib import Path
 
 from ..utils.wsl_path_converter import convert_windows_to_wsl_path, convert_wsl_to_windows_path
-from ..utils.wsl_executor import run_wsl_command, check_command_exists, run_with_progress, WSLExecutionError
+from ..utils.wsl_executor import check_command_exists
 from ..utils.quast_config import get_wsl_quast_path
 
 # Configure logging
@@ -69,18 +69,6 @@ def run_quast_analysis(
     # Ensure output directory exists
     os.makedirs(output_dir, exist_ok=True)
     
-    # Get the QUAST path in WSL format
-    quast_path = get_wsl_quast_path()
-    
-    # Check if QUAST exists at the specified path
-    if not os.path.exists(quast_path.replace('/mnt/c', 'C:')):
-        logger.error(f"QUAST is not available at path: {quast_path}")
-        return {
-            "error": f"QUAST executable not found at {quast_path}",
-            "success": False,
-            "output_dir": output_dir
-        }
-    
     # Convert input_files to list if it's a single string
     if isinstance(input_files, str):
         input_files = [input_files]
@@ -89,19 +77,21 @@ def run_quast_analysis(
     wsl_input_files = [convert_windows_to_wsl_path(f) for f in input_files]
     wsl_output_dir = convert_windows_to_wsl_path(output_dir)
     
-    # Build QUAST command using the full path
-    command = [quast_path]  # Use full path to QUAST
+    # Use a simple command with proper quoting
+    command = "wsl"
+    args = ["quast.py"]  # Directly use QUAST from the WSL path
     
     # Add input files
-    command.extend(wsl_input_files)
+    for input_file in wsl_input_files:
+        args.append(input_file)
     
     # Add output directory
-    command.extend(["-o", wsl_output_dir])
+    args.extend(["-o", wsl_output_dir])
     
     # Add reference genome if provided
     if reference_genome:
         wsl_reference = convert_windows_to_wsl_path(reference_genome)
-        command.extend(["-r", wsl_reference])
+        args.extend(["-r", wsl_reference])
     
     # Add labels if provided
     if labels:
@@ -110,41 +100,43 @@ def run_quast_analysis(
         else:
             # Escape commas in labels
             safe_labels = [label.replace(",", "\\,") for label in labels]
-            command.extend(["--labels", ",".join(safe_labels)])
+            label_str = ",".join(safe_labels)
+            args.extend(["--labels", label_str])
     
     # Add parameters
     merged_params = {**DEFAULT_QUAST_PARAMS, **(params or {})}
     for key, value in merged_params.items():
-        if key == "gene_finding" and value:
-            command.append("--gene-finding")
+        # Skip the quast_path parameter as we're handling that separately
+        if key == "quast_path":
+            continue
+        elif key == "gene_finding" and value:
+            args.append("--gene-finding")
         elif key == "conserved_genes_finding" and value:
-            command.append("--conserved-genes-finding")
+            args.append("--conserved-genes-finding")
         elif isinstance(value, bool):
             if value:
-                command.append(f"--{key.replace('_', '-')}")
+                args.append(f"--{key.replace('_', '-')}")
         else:
-            command.append(f"--{key.replace('_', '-')}={value}")
+            args.append(f"--{key.replace('_', '-')}={value}")
     
-    # Join command parts with spaces
-    command_str = " ".join(command)
+    # Format the full command for logging
+    full_command = command + " " + " ".join(args)
+    logger.info(f"Running QUAST command: {full_command}")
     
-    logger.info(f"Running QUAST command: {command_str}")
-    
-    # Run QUAST with progress monitoring
+    # Run QUAST using subprocess to avoid WSL execution issues
+    import subprocess
     try:
-        if progress_callback:
-            stdout, stderr, returncode = run_with_progress(
-                command_str,
-                timeout=3600,  # 1 hour timeout
-                progress_callback=progress_callback,
-                # QUAST doesn't provide clear progress percentages, so we'll use a heuristic
-                progress_regex=r"Stage (\d+)/\d+"
-            )
-        else:
-            stdout, stderr, returncode = run_wsl_command(
-                command_str,
-                timeout=3600,  # 1 hour timeout
-            )
+        # Run the command directly with subprocess
+        process = subprocess.run(
+            [command] + args,
+            capture_output=True,
+            text=True,
+            timeout=3600  # 1 hour timeout
+        )
+        
+        stdout = process.stdout
+        stderr = process.stderr
+        returncode = process.returncode
         
         # Check if QUAST ran successfully
         success = returncode == 0
@@ -158,12 +150,11 @@ def run_quast_analysis(
         result = {
             "success": success,
             "output_dir": output_dir,
-            "command": command_str,
+            "command": full_command,
             "returncode": returncode,
         }
         
         # Check if report files were actually created
-        # Use the find_quast_report_path function to locate the report
         from ..core.quast_parser import find_quast_report_path
         report_path = find_quast_report_path(output_dir)
         
@@ -204,7 +195,7 @@ def run_quast_analysis(
             "success": False,
             "output_dir": output_dir,
             "error": f"Error executing QUAST: {str(e)}",
-            "command": command_str
+            "command": full_command
         }
 
 
@@ -377,14 +368,26 @@ def extract_key_metrics(metrics: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[st
         # Calculate additional derived metrics
         if "# contigs" in assembly_metrics and "# contigs (>= 1000 bp)" in assembly_metrics:
             try:
-                small_contigs = assembly_metrics["# contigs"] - assembly_metrics["# contigs (>= 1000 bp)"]
+                # Extract values first
+                contigs = assembly_metrics["# contigs"]
+                contigs_1000bp = assembly_metrics["# contigs (>= 1000 bp)"]
+                
+                # Ensure both metrics are numeric
+                if not isinstance(contigs, (int, float)) or not isinstance(contigs_1000bp, (int, float)):
+                    logger.debug(f"Skipping derived metrics for {assembly_name}: non-numeric values detected")
+                    continue
+                
+                # Now it's safe to perform operations
+                small_contigs = contigs - contigs_1000bp
                 key_metrics[assembly_name]["# small contigs (< 1000 bp)"] = small_contigs
-                key_metrics[assembly_name]["% large contigs (>= 1000 bp)"] = (
-                    assembly_metrics["# contigs (>= 1000 bp)"] / assembly_metrics["# contigs"] * 100
-                    if assembly_metrics["# contigs"] > 0 else 0
-                )
-            except (TypeError, ValueError):
-                pass
+                
+                # Ensure we don't divide by zero and only compare numeric types
+                if contigs > 0:
+                    key_metrics[assembly_name]["% large contigs (>= 1000 bp)"] = (contigs_1000bp / contigs) * 100
+                else:
+                    key_metrics[assembly_name]["% large contigs (>= 1000 bp)"] = 0
+            except (TypeError, ValueError) as e:
+                logger.warning(f"Error calculating derived metrics for {assembly_name}: {str(e)}")
     
     return key_metrics
 
@@ -470,11 +473,16 @@ def calculate_comparison_metrics(
             orig_val = original_metrics[metric]
             filt_val = filtered_metrics[metric]
             
-            # Skip non-numeric values
-            if not isinstance(orig_val, (int, float)) or not isinstance(filt_val, (int, float)):
+            # More robust type checking
+            if not isinstance(orig_val, (int, float)):
+                logger.debug(f"Skipping non-numeric original value for metric {metric}: {type(orig_val)}")
                 continue
             
-            # Calculate change
+            if not isinstance(filt_val, (int, float)):
+                logger.debug(f"Skipping non-numeric filtered value for metric {metric}: {type(filt_val)}")
+                continue
+            
+            # Now safe to perform operations
             change = filt_val - orig_val
             comparison["change_summary"][metric] = change
             
