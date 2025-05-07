@@ -202,55 +202,49 @@ def run_quast_analysis(
 def parse_quast_report(report_path: str) -> Dict[str, Dict[str, Any]]:
     """
     Parse the main QUAST report.tsv file.
-    
     Args:
         report_path: Path to the report.tsv file
-        
     Returns:
         Dictionary of metrics organized by assembly
     """
+    import re
     metrics = {}
-    
     try:
         with open(report_path, 'r') as f:
             reader = csv.reader(f, delimiter='\t')
-            headers = next(reader)  # First row is headers
-            
-            # First column is the metric name, other columns are assembly names
+            headers = next(reader)
             assembly_names = headers[1:]
-            
-            # Initialize dictionaries for each assembly
             for name in assembly_names:
                 metrics[name] = {}
-            
-            # Read metric rows
             for row in reader:
                 if not row:
                     continue
-                    
                 metric_name = row[0]
                 values = row[1:]
-                
-                # Store values for each assembly
                 for i, value in enumerate(values):
                     if i < len(assembly_names):
                         assembly = assembly_names[i]
-                        # Try to convert to numeric if possible
                         try:
-                            if "%" in value:
-                                # Handle percentages
-                                metrics[assembly][metric_name] = float(value.replace("%", ""))
-                            elif "," in value:
-                                # Handle thousands separators
-                                metrics[assembly][metric_name] = float(value.replace(",", ""))
+                            value_str = str(value).strip()
+                            if "%" in value_str:
+                                metrics[assembly][metric_name] = float(value_str.replace("%", ""))
+                            elif "," in value_str:
+                                metrics[assembly][metric_name] = float(value_str.replace(",", ""))
+                            elif " + " in value_str or "+" in value_str:
+                                # Extract first number only for metrics like "3713 + 17 part"
+                                matches = re.findall(r'\d+', value_str)
+                                if matches:
+                                    metrics[assembly][metric_name] = float(matches[0])
+                                else:
+                                    metrics[assembly][metric_name] = value_str
                             else:
-                                metrics[assembly][metric_name] = float(value)
-                        except ValueError:
-                            metrics[assembly][metric_name] = value
+                                metrics[assembly][metric_name] = float(value_str)
+                        except (ValueError, TypeError):
+                            metrics[assembly][metric_name] = value_str
+                            logger.debug(f"Stored non-numeric value for {metric_name}: {value}")
     except Exception as e:
         logger.error(f"Error parsing QUAST report: {str(e)}")
         return {}
-    
     return metrics
 
 
@@ -264,7 +258,12 @@ def parse_transposed_report(report_path: str) -> Dict[str, Dict[str, Any]]:
     Returns:
         Dictionary of metrics organized by metric category
     """
+    # Import modules at the beginning of the function
+    import os  # Explicitly import os here
+    import re  # Import re for regex pattern matching
+    
     metrics = {}
+    assembly_names = []  # Initialize this to avoid reference errors
     
     try:
         with open(report_path, 'r') as f:
@@ -297,16 +296,31 @@ def parse_transposed_report(report_path: str) -> Dict[str, Dict[str, Any]]:
                         assembly = assembly_names[i]
                         # Try to convert to numeric if possible
                         try:
-                            if "%" in value:
+                            # Ensure value is a string and strip whitespace
+                            value_str = str(value).strip()
+                            
+                            # Handle various formats
+                            if "%" in value_str:
                                 # Handle percentages
-                                metric_values[assembly] = float(value.replace("%", ""))
-                            elif "," in value:
+                                metric_values[assembly] = float(value_str.replace("%", "").strip())
+                            elif "," in value_str:
                                 # Handle thousands separators
-                                metric_values[assembly] = float(value.replace(",", ""))
+                                metric_values[assembly] = float(value_str.replace(",", "").strip())
+                            elif " + " in value_str or "+" in value_str:
+                                # Handle values like "3713 + 17 part" or "3713+17 part"
+                                # Extract and use only the first number
+                                matches = re.findall(r'\d+', value_str)
+                                if matches:
+                                    metric_values[assembly] = float(matches[0])
+                                else:
+                                    metric_values[assembly] = value_str
                             else:
-                                metric_values[assembly] = float(value)
-                        except ValueError:
-                            metric_values[assembly] = value
+                                # Try to convert to float
+                                metric_values[assembly] = float(value_str)
+                        except (ValueError, TypeError) as e:
+                            # If conversion fails, store as string
+                            metric_values[assembly] = str(value)
+                            logger.debug(f"Stored non-numeric value for {metric_name}: {value}, error: {e}")
                 
                 metrics[category][metric_name] = metric_values
     except Exception as e:
@@ -355,6 +369,9 @@ def extract_key_metrics(metrics: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[st
     Returns:
         Dictionary containing only key metrics
     """
+    # Import os explicitly here to ensure it's available in this scope
+    import os # This import is fine as it's local to the function if needed, or rely on module-level
+    
     key_metrics = {}
     
     for assembly_name, assembly_metrics in metrics.items():
@@ -363,32 +380,40 @@ def extract_key_metrics(metrics: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[st
         # Extract metrics that are in our KEY_METRICS list
         for metric_name, value in assembly_metrics.items():
             if metric_name in KEY_METRICS:
-                key_metrics[assembly_name][metric_name] = value
+                # Only include if it's a numeric value
+                if isinstance(value, (int, float)):
+                    key_metrics[assembly_name][metric_name] = value
+                else:
+                    logger.debug(f"Skipping non-numeric value for key metric {metric_name} in assembly {assembly_name}: {value}")
         
         # Calculate additional derived metrics
-        if "# contigs" in assembly_metrics and "# contigs (>= 1000 bp)" in assembly_metrics:
+        # Check if base metrics exist AND are numeric before proceeding
+        contigs_val = assembly_metrics.get("# contigs")
+        contigs_1000bp_val = assembly_metrics.get("# contigs (>= 1000 bp)")
+
+        if isinstance(contigs_val, (int, float)) and isinstance(contigs_1000bp_val, (int, float)):
             try:
-                # Extract values first
-                contigs = assembly_metrics["# contigs"]
-                contigs_1000bp = assembly_metrics["# contigs (>= 1000 bp)"]
-                
-                # Ensure both metrics are numeric
-                if not isinstance(contigs, (int, float)) or not isinstance(contigs_1000bp, (int, float)):
-                    logger.debug(f"Skipping derived metrics for {assembly_name}: non-numeric values detected")
-                    continue
-                
                 # Now it's safe to perform operations
-                small_contigs = contigs - contigs_1000bp
+                small_contigs = contigs_val - contigs_1000bp_val
                 key_metrics[assembly_name]["# small contigs (< 1000 bp)"] = small_contigs
-                
-                # Ensure we don't divide by zero and only compare numeric types
-                if contigs > 0:
-                    key_metrics[assembly_name]["% large contigs (>= 1000 bp)"] = (contigs_1000bp / contigs) * 100
+
+                if contigs_val > 0: # This comparison is now safe
+                    key_metrics[assembly_name]["% large contigs (>= 1000 bp)"] = (contigs_1000bp_val / contigs_val) * 100
                 else:
-                    key_metrics[assembly_name]["% large contigs (>= 1000 bp)"] = 0
-            except (TypeError, ValueError) as e:
-                logger.warning(f"Error calculating derived metrics for {assembly_name}: {str(e)}")
-    
+                    key_metrics[assembly_name]["% large contigs (>= 1000 bp)"] = 0.0 # Ensure float for consistency
+            except (TypeError, ValueError) as e: # Should be rare if isinstance checks pass
+                logger.warning(f"Error calculating derived contig metrics for {assembly_name} despite initial checks: {str(e)}")
+        elif ("# contigs" in assembly_metrics or "# contigs (>= 1000 bp)" in assembly_metrics): # Log if keys exist but types are wrong
+            logger.debug(
+                f"Skipping derived contig metrics for {assembly_name}: base metrics are not numeric. "
+                f"Type of '# contigs': {type(contigs_val)}, "
+                f"Type of '# contigs (>= 1000 bp)': {type(contigs_1000bp_val)}"
+            )
+            # Optionally, set derived metrics to None or a placeholder if they are expected in the schema
+            key_metrics[assembly_name]["# small contigs (< 1000 bp)"] = None
+            key_metrics[assembly_name]["% large contigs (>= 1000 bp)"] = None
+
+
     return key_metrics
 
 
@@ -402,18 +427,10 @@ def compare_assemblies(
 ) -> Dict[str, Any]:
     """
     Compare original and filtered assemblies using QUAST.
-    
-    Args:
-        original_assembly: Path to the original assembly FASTA
-        filtered_assembly: Path to the filtered assembly FASTA
-        output_dir: Directory to store comparison results
-        reference_genome: Optional path to reference genome
-        params: Optional dictionary of QUAST parameters
-        progress_callback: Optional callback function for progress updates
-    
-    Returns:
-        Dictionary with comparison results
     """
+    # Local import to ensure os is available in this scope
+    import os
+    
     # Generate labels based on filenames
     orig_label = os.path.splitext(os.path.basename(original_assembly))[0]
     filt_label = os.path.splitext(os.path.basename(filtered_assembly))[0]
@@ -445,14 +462,6 @@ def calculate_comparison_metrics(
 ) -> Dict[str, Any]:
     """
     Calculate metrics comparing original and filtered assemblies.
-    
-    Args:
-        metrics: Dictionary of metrics from QUAST
-        original_label: Label for the original assembly
-        filtered_label: Label for the filtered assembly
-    
-    Returns:
-        Dictionary of comparison metrics
     """
     comparison = {
         "change_summary": {},
@@ -460,61 +469,90 @@ def calculate_comparison_metrics(
         "improvement": {}
     }
     
-    # Check if both labels exist in the metrics
     if original_label not in metrics or filtered_label not in metrics:
         return comparison
-    
+        
     original_metrics = metrics[original_label]
     filtered_metrics = metrics[filtered_label]
     
-    # Calculate absolute changes
+    # First pass - pre-process any string values that should be numeric
+    for metric_name in set(original_metrics.keys()) & set(filtered_metrics.keys()):
+        try:
+            # Ensure both values are numeric if possible
+            for metrics_dict, label in [(original_metrics, original_label), (filtered_metrics, filtered_label)]:
+                val = metrics_dict.get(metric_name)
+                if isinstance(val, str):
+                    try:
+                        if val.replace('.', '', 1).isdigit():  # Simple float check
+                            metrics_dict[metric_name] = float(val)
+                        elif "+" in val:
+                            # Extract first number for gene metrics like "3713 + 17 part"
+                            import re
+                            matches = re.findall(r'\d+', val)
+                            if matches:
+                                metrics_dict[metric_name] = float(matches[0])
+                    except (ValueError, TypeError):
+                        pass  # Keep as string if conversion fails
+        except Exception as e:
+            logger.debug(f"Error pre-processing metric {metric_name}: {str(e)}")
+    
+    # Now process metrics for comparison
     for metric in KEY_METRICS:
-        if metric in original_metrics and metric in filtered_metrics:
-            orig_val = original_metrics[metric]
-            filt_val = filtered_metrics[metric]
-            
-            # More robust type checking
-            if not isinstance(orig_val, (int, float)):
-                logger.debug(f"Skipping non-numeric original value for metric {metric}: {type(orig_val)}")
-                continue
-            
-            if not isinstance(filt_val, (int, float)):
-                logger.debug(f"Skipping non-numeric filtered value for metric {metric}: {type(filt_val)}")
-                continue
-            
-            # Now safe to perform operations
-            change = filt_val - orig_val
-            comparison["change_summary"][metric] = change
-            
-            # Calculate percent change (avoid division by zero)
-            if orig_val != 0:
-                pct_change = (change / orig_val) * 100
-                comparison["percent_change"][metric] = pct_change
-            else:
-                comparison["percent_change"][metric] = 0
-            
-            # Determine if the change is an improvement
-            # For metrics where higher is better
-            if any(keyword in metric.lower() for keyword in ["n50", "genome fraction", "busco", "complete"]):
-                comparison["improvement"][metric] = change > 0
-            # For metrics where lower is better
-            elif any(keyword in metric.lower() for keyword in ["l50", "misassemblies", "# contigs"]):
-                comparison["improvement"][metric] = change < 0
-            # For other metrics, don't make a judgment
-            else:
-                comparison["improvement"][metric] = None
+        try:
+            if metric in original_metrics and metric in filtered_metrics:
+                orig_val = original_metrics[metric]
+                filt_val = filtered_metrics[metric]
+                
+                # Only compare if both are numeric
+                if not isinstance(orig_val, (int, float)) or not isinstance(filt_val, (int, float)):
+                    logger.debug(f"Skipping non-numeric values for metric {metric}: {orig_val} ({type(orig_val).__name__}), {filt_val} ({type(filt_val).__name__})")
+                    continue
+                
+                # Now safe to perform numeric operations
+                change = filt_val - orig_val
+                comparison["change_summary"][metric] = change
+                
+                # Calculate percent change (avoid division by zero)
+                if orig_val != 0:
+                    pct_change = (change / orig_val) * 100
+                    comparison["percent_change"][metric] = pct_change
+                else:
+                    comparison["percent_change"][metric] = 0
+                
+                # Determine if change is an improvement
+                if any(keyword in metric.lower() for keyword in ["n50", "nga50", "genome fraction", "busco", "complete"]):
+                    comparison["improvement"][metric] = change > 0
+                elif any(keyword in metric.lower() for keyword in ["l50", "lga50", "misassemblies", "# contigs"]):
+                    comparison["improvement"][metric] = change < 0
+                else:
+                    comparison["improvement"][metric] = None
+        except Exception as e:
+            logger.error(f"Error calculating comparison for metric {metric}: {str(e)}")
+            continue
     
-    # Add overall assessment
-    positive_changes = sum(1 for imp in comparison["improvement"].values() if imp is True)
-    negative_changes = sum(1 for imp in comparison["improvement"].values() if imp is False)
-    total_changes = sum(1 for imp in comparison["improvement"].values() if imp is not None)
-    
-    if total_changes > 0:
-        comparison["overall_improvement_score"] = (positive_changes - negative_changes) / total_changes
-        comparison["overall_improved"] = comparison["overall_improvement_score"] > 0
-    else:
+    try:
+        positive_changes = sum(1 for imp in comparison["improvement"].values() if imp is True)
+        negative_changes = sum(1 for imp in comparison["improvement"].values() if imp is False)
+        total_changes = sum(1 for imp in comparison["improvement"].values() if imp is not None)
+        
+        if total_changes > 0:
+            comparison["overall_improvement_score"] = (positive_changes - negative_changes) / total_changes
+            comparison["overall_improved"] = comparison["overall_improvement_score"] > 0
+        else:
+            comparison["overall_improvement_score"] = 0
+            comparison["overall_improved"] = False
+            
+        # Add detailed counts to match the API model
+        comparison["positive_metric_count"] = positive_changes
+        comparison["negative_metric_count"] = negative_changes
+        comparison["total_evaluated_metrics"] = total_changes
+    except Exception as e:
+        logger.error(f"Error calculating overall assessment: {str(e)}")
         comparison["overall_improvement_score"] = 0
         comparison["overall_improved"] = False
+        comparison["positive_metric_count"] = 0
+        comparison["negative_metric_count"] = 0
+        comparison["total_evaluated_metrics"] = 0
     
     return comparison
 
@@ -530,6 +568,9 @@ def get_quast_report_path(job_id: str, report_type: str = "html") -> str:
     Returns:
         Path to the report file
     """
+    # Local import to ensure os is available in this scope
+    import os
+    
     base_dir = os.path.join("data", "jobs", job_id, "quast")
     
     # Map report types to filenames
