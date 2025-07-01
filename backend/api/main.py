@@ -369,16 +369,27 @@ async def download_file(job_id: str, file_name: str):
     """
     Download a filtered FASTA file
     """
+    print(f"Download request for job_id: {job_id}, file_name: {file_name}")
+    
+    if job_id not in active_jobs:
+        print(f"Job {job_id} not found in active_jobs")
+        raise HTTPException(status_code=404, detail="Job not found")
+    
     job_info = get_job_info(job_id)
+    print(f"Job info: {job_info}")
     
     if not job_info.get("results"):
+        print(f"No results for job {job_id}")
         raise HTTPException(status_code=404, detail="No results available for this job")
     
     output_file = job_info["results"]["output_file"]
+    print(f"Output file path: {output_file}")
     
     if not os.path.exists(output_file):
+        print(f"Output file does not exist: {output_file}")
         raise HTTPException(status_code=404, detail="Output file not found")
     
+    print(f"Returning file: {output_file}")
     return FileResponse(
         path=output_file,
         filename=Path(output_file).name,

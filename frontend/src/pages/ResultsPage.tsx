@@ -15,7 +15,7 @@ import {
 } from '@mui/material';
 import DownloadIcon from '@mui/icons-material/Download';
 import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
-import { getFilterResults, getJobStatus } from '../services/api';
+import { getFilterResults, getJobStatus, getFullDownloadUrl } from '../services/api';
 import { JobStatus, FilterResults } from '../types/api';
 import StatusAlert from '../components/StatusAlert';
 import SequenceStatsCard from '../components/SequenceStatsCard';
@@ -184,9 +184,11 @@ const ResultsPage: React.FC = () => {
                       variant="contained"
                       color="primary"
                       component="a"
-                      href={results.download_url}
+                      href={getFullDownloadUrl(results.download_url)}
                       startIcon={<DownloadIcon />}
                       sx={{ mr: 2 }}
+                      target="_blank"
+                      rel="noopener noreferrer"
                     >
                       Download Filtered FASTA
                     </Button>

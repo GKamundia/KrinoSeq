@@ -57,6 +57,15 @@ export const getDownloadUrl = (jobId: string, fileName: string): string => {
   return `${API.defaults.baseURL}/download/${jobId}/${fileName}`;
 };
 
+export const getFullDownloadUrl = (downloadUrl: string): string => {
+  // If it's already a full URL, return as is
+  if (downloadUrl.startsWith('http')) {
+    return downloadUrl;
+  }
+  // Otherwise, prepend the API base URL
+  return `${API.defaults.baseURL}${downloadUrl}`;
+};
+
 export const deleteJob = async (jobId: string) => {
   const response = await API.delete(`/jobs/${jobId}`);
   return response.data;
