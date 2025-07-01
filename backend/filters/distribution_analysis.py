@@ -5,9 +5,15 @@ Advanced distribution analysis for length-based filtering of genomic sequences.
 from typing import Dict, List, Tuple, Optional, Any
 import numpy as np
 from scipy import stats
-from sklearn.mixture import GaussianMixture
 from scipy.signal import find_peaks
 
+# Optional sklearn import
+try:
+    from sklearn.mixture import GaussianMixture
+    SKLEARN_AVAILABLE = True
+except ImportError:
+    SKLEARN_AVAILABLE = False
+    print("Warning: scikit-learn not available. Some advanced features will be disabled.")
 
 def detect_multimodality(lengths: List[int], max_components: int = 10, 
                          transform_type: str = "box-cox",
@@ -25,6 +31,16 @@ def detect_multimodality(lengths: List[int], max_components: int = 10,
     Returns:
         Dictionary with multimodality analysis results
     """
+    # Check if sklearn is available for advanced analysis
+    if not SKLEARN_AVAILABLE:
+        print("scikit-learn not available, using simplified analysis")
+        return {
+            "is_multimodal": False,
+            "n_components": 1,
+            "method": "simplified",
+            "warning": "Advanced multimodal analysis requires scikit-learn"
+        }
+    
     # Add debug output at the beginning
     print(f"Running GMM with component_method={component_method}, transform_type={transform_type}")
 
@@ -52,6 +68,8 @@ def detect_multimodality(lengths: List[int], max_components: int = 10,
     
     # Dirichlet Process approach (nonparametric)
     if component_method == "dirichlet":
+        if not SKLEARN_AVAILABLE:
+            raise ImportError("scikit-learn is required for Dirichlet process method")
         from sklearn.mixture import BayesianGaussianMixture
         
         model = BayesianGaussianMixture(

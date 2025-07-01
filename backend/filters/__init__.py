@@ -25,12 +25,31 @@ from .n50_optimization import (
     optimize_n50_l50_tradeoff
 )
 
-from .distribution_analysis import (
-    detect_multimodality,
-    find_distribution_breakpoints,
-    identify_natural_cutoffs,
-    detect_outliers_combined
-)
+# Try to import advanced distribution analysis functions
+try:
+    from .distribution_analysis import (
+        detect_multimodality,
+        find_distribution_breakpoints,
+        identify_natural_cutoffs,
+        detect_outliers_combined
+    )
+    DISTRIBUTION_ANALYSIS_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Advanced distribution analysis not available: {e}")
+    DISTRIBUTION_ANALYSIS_AVAILABLE = False
+    
+    # Provide fallback functions
+    def detect_multimodality(*args, **kwargs):
+        return {"is_multimodal": False, "n_components": 1, "method": "fallback"}
+    
+    def find_distribution_breakpoints(*args, **kwargs):
+        return []
+    
+    def identify_natural_cutoffs(*args, **kwargs):
+        return []
+    
+    def detect_outliers_combined(*args, **kwargs):
+        return []
 
 
 def apply_optimal_filter(seq_lengths: Dict[str, int], 
