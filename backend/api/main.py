@@ -34,10 +34,10 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Configure CORS
+# Configure CORS - Allow all origins for deployment
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # React frontend
+    allow_origins=["*"],  # Allow all origins for deployment
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -191,11 +191,21 @@ async def configure_filter(job_id: str, config: FilterPipelineConfig):
         }
         pipeline_config.append(stage_dict)
     
+    # Log before validation
+    for stage in pipeline_config:
+        if stage["method"] == "natural":
+            print(f"BEFORE VALIDATION - Natural breakpoint params: {stage.get('params', {})}")
+            
     # Validate the configuration
     is_valid, error_message, validated_config = validate_pipeline_config(pipeline_config)
     
     if not is_valid:
         raise HTTPException(status_code=400, detail=f"Invalid configuration: {error_message}")
+    
+    # After validation
+    for stage in validated_config:
+        if stage["method"] == "natural":
+            print(f"AFTER VALIDATION - Natural breakpoint params: {stage['params']}")
     
     # Store the validated configuration in the job info
     job_info["config"] = validated_config
@@ -283,7 +293,7 @@ async def run_filter_job(job_id: str):
         # Store results
         job_info["status"] = JobStatus.COMPLETED
         job_info["message"] = "Filtering completed successfully"
-        job_info["results"] = results
+        job_info["results"] = results  # This should include all data from workflow.run()
         
     except Exception as e:
         job_info["status"] = JobStatus.FAILED
@@ -312,6 +322,27 @@ async def get_filter_results(job_id: str):
     
     # Prepare visualization data
     if "summary" in results:
+        # Extract filtering process details from pipeline stages
+        filtering_process = []
+        if "summary" in results and "pipeline_report" in results["summary"]:
+            if "stages" in results["summary"]["pipeline_report"]:
+                # Extract the stages
+                pipeline_stages = results["summary"]["pipeline_report"]["stages"]
+                
+                # For each stage, ensure we preserve the GMM method
+                for stage in pipeline_stages:
+                    if stage["method"] == "natural" and "process_details" in stage:
+                        if "natural_breakpoint_details" in stage["process_details"]:
+                            details = stage["process_details"]["natural_breakpoint_details"]
+                            
+                            # Make sure the original method is used, not the default
+                            if "method_used" in details:
+                                stage["method_used"] = details["method_used"]
+                                # Add this line to preserve the method throughout the pipeline
+                                print(f"Preserving GMM method: {details['method_used']}")
+                
+                filtering_process = pipeline_stages
+        
         return FilterResultResponse(
             job_id=job_id,
             status=JobStatus.COMPLETED,
@@ -321,6 +352,7 @@ async def get_filter_results(job_id: str):
                 "before": job_info.get("file_info", {}).get("visualization_data", {}),
                 "after": results.get("summary", {}).get("output_file", {}).get("visualization_data", {})
             },
+            filtering_process=filtering_process,  # Include detailed filtering process information
             message="Filtering completed successfully"
         )
     else:

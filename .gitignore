@@ -26,3 +26,7 @@ logs/
 
 # TypeScript specific
 /frontend/*.tsbuildinfo
+
+#QUAST
+/tools
+/quast_comparison

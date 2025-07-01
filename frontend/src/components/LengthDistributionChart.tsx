@@ -47,7 +47,7 @@ interface LengthDistributionChartProps {
 
 const LengthDistributionChart: React.FC<LengthDistributionChartProps> = ({ 
   data,
-  title = 'Sequence Length Distribution'
+  title = 'Contig Length Distribution'
 }) => {
   const [tabValue, setTabValue] = React.useState(0);
 
@@ -106,12 +106,12 @@ const LengthDistributionChart: React.FC<LengthDistributionChartProps> = ({
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis 
                 dataKey="length" 
-                label={{ value: 'Sequence Length (bp)', position: 'insideBottom', offset: -5 }} 
+                label={{ value: 'Contig Length (bp)', position: 'insideBottom', offset: -5 }} 
               />
               <YAxis 
                 label={{ value: 'Count', angle: -90, position: 'insideLeft' }} 
               />
-              <Tooltip formatter={(value: number) => [value.toLocaleString(), 'Sequences']} labelFormatter={(label: number) => `Length: ${label.toLocaleString()} bp`} />
+              <Tooltip formatter={(value: number) => [value.toLocaleString(), 'Contig']} labelFormatter={(label: number) => `Length: ${label.toLocaleString()} bp`} />
               <Legend />
               <Bar dataKey="count" fill="#1976d2" />
             </BarChart>
@@ -124,7 +124,7 @@ const LengthDistributionChart: React.FC<LengthDistributionChartProps> = ({
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis 
                 dataKey="length" 
-                label={{ value: 'Sequence Length (bp)', position: 'insideBottom', offset: -5 }} 
+                label={{ value: 'Contige Length (bp)', position: 'insideBottom', offset: -5 }} 
               />
               <YAxis 
                 label={{ value: 'Density', angle: -90, position: 'insideLeft' }} 
@@ -148,7 +148,7 @@ const LengthDistributionChart: React.FC<LengthDistributionChartProps> = ({
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis 
                 dataKey="length" 
-                label={{ value: 'Sequence Length (bp)', position: 'insideBottom', offset: -5 }} 
+                label={{ value: 'Contig Length (bp)', position: 'insideBottom', offset: -5 }} 
               />
               <YAxis 
                 label={{ value: 'Cumulative %', angle: -90, position: 'insideLeft' }} 

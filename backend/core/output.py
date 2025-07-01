@@ -38,14 +38,14 @@ def filter_sequences_from_fasta(input_file: str, seq_ids_to_keep: Set[str], outp
 
 def generate_results_summary(input_file: str, 
                             output_file: str, 
-                            filter_report: Dict[str, Any]) -> Dict[str, Any]:
+                            pipeline_report: Dict[str, Any]) -> Dict[str, Any]:
     """
     Generate a detailed summary of filtering results.
     
     Args:
         input_file: Path to input FASTA file
         output_file: Path to output FASTA file
-        filter_report: Filter pipeline report
+        pipeline_report: Filter pipeline report
         
     Returns:
         Dictionary with summary information
@@ -68,7 +68,8 @@ def generate_results_summary(input_file: str,
                 "median_length": before_stats["basic_stats"]["median"],
                 "std_dev": before_stats["basic_stats"]["std_dev"],
                 "n50": before_stats["assembly_stats"]["n50"],
-                "l50": before_stats["assembly_stats"]["l50"]
+                "l50": before_stats["assembly_stats"]["l50"],
+                "visualization_data": before_stats["visualization_data"]
             },
             "output_file": {
                 "path": output_file,
@@ -81,7 +82,8 @@ def generate_results_summary(input_file: str,
                 "median_length": after_stats["basic_stats"]["median"],
                 "std_dev": after_stats["basic_stats"]["std_dev"],
                 "n50": after_stats["assembly_stats"]["n50"],
-                "l50": after_stats["assembly_stats"]["l50"]
+                "l50": after_stats["assembly_stats"]["l50"],
+                "visualization_data": after_stats["visualization_data"]
             },
             "filtering": {
                 "sequences_removed": before_stats["sequence_count"] - after_stats["sequence_count"],
@@ -97,7 +99,8 @@ def generate_results_summary(input_file: str,
                 "n50_change": after_stats["assembly_stats"]["n50"] - before_stats["assembly_stats"]["n50"],
                 "l50_change": after_stats["assembly_stats"]["l50"] - before_stats["assembly_stats"]["l50"]
             },
-            "filter_report": filter_report
+            "pipeline_report": pipeline_report,
+            "pipeline_stages": pipeline_report.get("stages", [])
         }
         
         return summary
@@ -105,7 +108,7 @@ def generate_results_summary(input_file: str,
     except Exception as e:
         return {
             "error": f"Error generating summary: {str(e)}",
-            "filter_report": filter_report
+            "pipeline_report": pipeline_report
         }
 
 

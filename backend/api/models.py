@@ -26,6 +26,9 @@ class FilterParams(BaseModel):
     min_cutoff: Optional[int] = None
     max_cutoff: Optional[int] = None
     step: Optional[int] = None
+    gmm_method: Optional[str] = None
+    transform: Optional[str] = None
+    component_method: Optional[str] = None
 
 
 class FilterStageConfig(BaseModel):
@@ -79,11 +82,19 @@ class ResultSummary(BaseModel):
     timestamp: str
 
 
+class FilteringProcessDetails(BaseModel):
+    """Detailed information about the filtering process"""
+    method: str
+    params: Dict[str, Any]
+    process_details: Dict[str, Any]
+
+
 class FilterResultResponse(BaseModel):
     """Response for filter results endpoint"""
     job_id: str
     status: JobStatus
-    summary: Optional[ResultSummary] = None
+    summary: Optional[Dict[str, Any]] = None
     download_url: Optional[str] = None
     visualization_data: Optional[Dict[str, Any]] = None
+    filtering_process: Optional[List[FilteringProcessDetails]] = None  # Added field
     message: Optional[str] = None

@@ -62,7 +62,7 @@ const FilteringResultsSummary: React.FC<FilteringResultsSummaryProps> = ({ summa
         <Grid item xs={12} md={6}>
           <Box sx={{ mb: 2 }}>
             <Typography variant="subtitle2" gutterBottom>
-              Sequences Retained
+              Contigs Retained
             </Typography>
             <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
               <Box sx={{ flexGrow: 1, mr: 1 }}>
@@ -77,7 +77,7 @@ const FilteringResultsSummary: React.FC<FilteringResultsSummaryProps> = ({ summa
               </Typography>
             </Box>
             <Typography variant="body2" color="text.secondary">
-              {outputSequenceCount.toLocaleString()} / {inputSequenceCount.toLocaleString()} sequences kept
+              {outputSequenceCount.toLocaleString()} / {inputSequenceCount.toLocaleString()} contigs kept
             </Typography>
           </Box>
           
@@ -133,7 +133,7 @@ const FilteringResultsSummary: React.FC<FilteringResultsSummaryProps> = ({ summa
               Removed Data
             </Typography>
             <Typography variant="body2">
-              <strong>{sequencesRemoved.toLocaleString()}</strong> sequences removed
+              <strong>{sequencesRemoved.toLocaleString()}</strong> contigs removed
             </Typography>
             <Typography variant="body2">
               <strong>{lengthRemoved.toLocaleString()}</strong> bp removed

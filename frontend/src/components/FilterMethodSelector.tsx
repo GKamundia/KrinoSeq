@@ -137,7 +137,74 @@ const FilterMethodSelector: React.FC = () => {
           </Grid>
         );
         
-      // ADAPTIVE and NATURAL don't have parameters
+      case FilterMethod.NATURAL:
+        return (
+          <Grid container spacing={2}>
+            <Grid item xs={12}>
+              <FormControl fullWidth>
+                <InputLabel id={`gmm-method-label-${index}`}>GMM Cutoff Method</InputLabel>
+                <Select
+                  labelId={`gmm-method-label-${index}`}
+                  name={`stages.${index}.params.gmm_method`}
+                  value={values.stages[index].params?.gmm_method || 'midpoint'}
+                  label="GMM Cutoff Method"
+                  onChange={handleChange}
+                >
+                  <MenuItem value="midpoint">Midpoint between components</MenuItem>
+                  <MenuItem value="intersection">Intersection point (weighted PDFs)</MenuItem>
+                  <MenuItem value="probability">Probability threshold (0.5)</MenuItem>
+                  <MenuItem value="valley">Valley finding (minimum density)</MenuItem>
+                </Select>
+                <FormHelperText>
+                  Method to determine cutoff point between adjacent components
+                </FormHelperText>
+              </FormControl>
+            </Grid>
+            
+            <Grid item xs={12}>
+              <FormControl fullWidth>
+                <InputLabel id={`transform-label-${index}`}>Transformation</InputLabel>
+                <Select
+                  labelId={`transform-label-${index}`}
+                  name={`stages.${index}.params.transform`}
+                  value={values.stages[index].params?.transform || 'box-cox'}
+                  label="Transformation"
+                  onChange={handleChange}
+                >
+                  <MenuItem value="box-cox">Box-Cox (Best for genomic data)</MenuItem>
+                  <MenuItem value="log">Log Transform</MenuItem>
+                  <MenuItem value="none">No transformation</MenuItem>
+                </Select>
+                <FormHelperText>
+                  Data transformation to normalize skewed distributions
+                </FormHelperText>
+              </FormControl>
+            </Grid>
+            
+            <Grid item xs={12}>
+              <FormControl fullWidth>
+                <InputLabel id={`component-method-label-${index}`}>Component Selection</InputLabel>
+                <Select
+                  labelId={`component-method-label-${index}`}
+                  name={`stages.${index}.params.component_method`}
+                  value={values.stages[index].params?.component_method || 'bic'}
+                  label="Component Selection"
+                  onChange={handleChange}
+                >
+                  <MenuItem value="bic">BIC (Bayesian Information Criterion)</MenuItem>
+                  <MenuItem value="aic">AIC (Akaike Information Criterion)</MenuItem>
+                  <MenuItem value="loo">PSIS-LOO (Cross-validation approximation)</MenuItem>
+                  <MenuItem value="dirichlet">Dirichlet Process (Automatic)</MenuItem>
+                </Select>
+                <FormHelperText>
+                  <strong>Note:</strong> This selects how to determine the number of clusters, 
+                  not where to place the cutoff (which is set by GMM Cutoff Method)
+                </FormHelperText>
+              </FormControl>
+            </Grid>
+          </Grid>
+        );
+        
       default:
         return (
           <Typography variant="body2" color="text.secondary">

@@ -40,7 +40,7 @@ const SequenceStatsCard: React.FC<SequenceStatsCardProps> = ({
         
         <Grid container spacing={2}>
           <Grid item xs={12} md={6}>
-            <Typography variant="subtitle2">Sequence Count</Typography>
+            <Typography variant="subtitle2">Contig Count</Typography>
             <Typography variant="body1">{sequenceCount.toLocaleString()}</Typography>
             
             <Divider sx={{ my: 1 }} />
