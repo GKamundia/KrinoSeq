@@ -5,13 +5,13 @@
 ### Step 1: Get Your Railway Backend URL
 1. Go to your Railway dashboard
 2. Click on your genome-filtering-tool project
-3. Copy the public URL (e.g., `https://genome-filtering-tool-production.up.railway.app`)
+3. Your backend URL is: `https://web-production-b2868.up.railway.app`
 
 ### Step 2: Update Environment Variables
 1. Open `frontend/.env.production`
-2. Replace the URL with your actual Railway URL:
+2. The URL is already set to your Railway URL:
    ```
-   REACT_APP_API_URL=https://your-actual-railway-url.railway.app
+   REACT_APP_API_URL=https://web-production-b2868.up.railway.app
    ```
 
 ### Step 3: Deploy to Vercel
