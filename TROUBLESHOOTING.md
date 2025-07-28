@@ -39,6 +39,7 @@ npm run build
 ```
 
 Then drag the `frontend/build` folder to:
+
 - [Netlify Drop](https://app.netlify.com/drop)
 - [Surge.sh](https://surge.sh)
 
@@ -55,6 +56,7 @@ npx gh-pages -d build
 ## Quick Test - Static File Hosting
 
 If you want to test quickly:
+
 1. Build the frontend locally: `cd frontend && npm run build`
 2. Use Python server: `cd build && python -m http.server 3000`
 3. Visit `http://localhost:3000`
@@ -62,5 +64,6 @@ If you want to test quickly:
 ## Environment Variable Check
 
 Make sure your frontend has the correct backend URL:
+
 - File: `frontend/.env.production`
 - Content: `REACT_APP_API_URL=https://web-production-b2868.up.railway.app`
