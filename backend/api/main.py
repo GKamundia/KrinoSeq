@@ -148,6 +148,25 @@ async def root():
     return {"message": "Welcome to the Genome Filtering API"}
 
 
+@app.get("/platform")
+async def get_platform_status():
+    """
+    Get platform information and QUAST installation status.
+    """
+    from ..utils.platform_detector import get_platform_info, get_recommended_setup
+    from ..utils.quast_config import validate_quast_installation, get_installation_instructions
+    
+    platform_info = get_platform_info()
+    quast_validation = validate_quast_installation()
+    
+    return {
+        "platform": platform_info,
+        "quast": quast_validation,
+        "setup_recommendations": get_recommended_setup(),
+        "installation_instructions": get_installation_instructions() if not quast_validation["is_available"] else None
+    }
+
+
 @app.post("/upload", response_model=UploadResponse)
 async def upload_file(
     background_tasks: BackgroundTasks,
@@ -346,11 +365,12 @@ async def run_filter_job(job_id: str):
         job_dirs = setup_job_directories(job_id)
         
         # Import QUAST config
-        from ..utils.quast_config import QUAST_EXECUTABLE_STR
+        from ..utils.quast_config import get_quast_executable
         
         # Log QUAST path for debugging
         import logging
-        logging.info(f"Using QUAST executable: {QUAST_EXECUTABLE_STR}")
+        quast_executable = get_quast_executable()
+        logging.info(f"Using QUAST executable: {quast_executable}")
         
         # Determine if reference genome is provided
         reference_genome = None
@@ -367,7 +387,7 @@ async def run_filter_job(job_id: str):
                 "threads": 4, 
                 "gene_finding": True,
                 # Add custom path to QUAST executable
-                "quast_path": QUAST_EXECUTABLE_STR
+                "quast_path": quast_executable
             },
             reference_genome=reference_genome
         )

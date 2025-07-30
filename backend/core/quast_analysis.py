@@ -1,6 +1,7 @@
 """
 QUAST analysis module for evaluating genome assemblies.
-Handles running QUAST through WSL, parsing its outputs, and storing results.
+Handles running QUAST on different platforms (Windows via WSL, native on macOS/Linux),
+parsing its outputs, and storing results.
 """
 
 import os
@@ -11,9 +12,9 @@ import logging
 from typing import Dict, List, Tuple, Optional, Any, Union, Callable
 from pathlib import Path
 
-from ..utils.wsl_path_converter import convert_windows_to_wsl_path, convert_wsl_to_windows_path
-from ..utils.wsl_executor import check_command_exists
-from ..utils.quast_config import get_wsl_quast_path
+from ..utils.cross_platform_executor import run_command, normalize_path
+from ..utils.quast_config import get_quast_command, validate_quast_installation
+from ..utils.platform_detector import requires_wsl, get_platform
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -64,8 +65,20 @@ def run_quast_analysis(
     progress_callback: Optional[Callable[[int], None]] = None
 ) -> Dict[str, Any]:
     """
-    Run QUAST on one or more genome assemblies.
+    Run QUAST on one or more genome assemblies using cross-platform execution.
     """
+    # Validate QUAST installation first
+    validation = validate_quast_installation()
+    if not validation["is_available"]:
+        error_msg = f"QUAST is not available: {validation.get('error', 'Unknown error')}"
+        logger.error(error_msg)
+        return {
+            "success": False,
+            "error": error_msg,
+            "validation": validation,
+            "output_dir": output_dir
+        }
+    
     # Ensure output directory exists
     os.makedirs(output_dir, exist_ok=True)
     
@@ -73,25 +86,26 @@ def run_quast_analysis(
     if isinstance(input_files, str):
         input_files = [input_files]
     
-    # Convert to WSL paths
-    wsl_input_files = [convert_windows_to_wsl_path(f) for f in input_files]
-    wsl_output_dir = convert_windows_to_wsl_path(output_dir)
+    # Get QUAST command for current platform
+    quast_cmd = get_quast_command()
     
-    # Use a simple command with proper quoting
-    command = "wsl"
-    args = ["quast.py"]  # Directly use QUAST from the WSL path
+    # Normalize paths for the current platform
+    normalized_input_files = [normalize_path(f, for_command=True) for f in input_files]
+    normalized_output_dir = normalize_path(output_dir, for_command=True)
+    
+    # Build command arguments
+    command_parts = [quast_cmd]
     
     # Add input files
-    for input_file in wsl_input_files:
-        args.append(input_file)
+    command_parts.extend(normalized_input_files)
     
     # Add output directory
-    args.extend(["-o", wsl_output_dir])
+    command_parts.extend(["-o", normalized_output_dir])
     
     # Add reference genome if provided
     if reference_genome:
-        wsl_reference = convert_windows_to_wsl_path(reference_genome)
-        args.extend(["-r", wsl_reference])
+        normalized_reference = normalize_path(reference_genome, for_command=True)
+        command_parts.extend(["-r", normalized_reference])
     
     # Add labels if provided
     if labels:
@@ -101,42 +115,37 @@ def run_quast_analysis(
             # Escape commas in labels
             safe_labels = [label.replace(",", "\\,") for label in labels]
             label_str = ",".join(safe_labels)
-            args.extend(["--labels", label_str])
+            command_parts.extend(["--labels", label_str])
     
     # Add parameters
     merged_params = {**DEFAULT_QUAST_PARAMS, **(params or {})}
     for key, value in merged_params.items():
-        # Skip the quast_path parameter as we're handling that separately
-        if key == "quast_path":
+        # Skip internal parameters
+        if key in ["quast_path"]:
             continue
         elif key == "gene_finding" and value:
-            args.append("--gene-finding")
+            command_parts.append("--gene-finding")
         elif key == "conserved_genes_finding" and value:
-            args.append("--conserved-genes-finding")
+            command_parts.append("--conserved-genes-finding")
         elif isinstance(value, bool):
             if value:
-                args.append(f"--{key.replace('_', '-')}")
+                command_parts.append(f"--{key.replace('_', '-')}")
         else:
-            args.append(f"--{key.replace('_', '-')}={value}")
+            command_parts.append(f"--{key.replace('_', '-')}={value}")
     
-    # Format the full command for logging
-    full_command = command + " " + " ".join(args)
+    # Join command parts with proper escaping
+    full_command = " ".join(command_parts)
     logger.info(f"Running QUAST command: {full_command}")
+    logger.info(f"Platform: {get_platform().value}, requires WSL: {requires_wsl()}")
     
-    # Run QUAST using subprocess to avoid WSL execution issues
-    import subprocess
     try:
-        # Run the command directly with subprocess
-        process = subprocess.run(
-            [command] + args,
-            capture_output=True,
-            text=True,
-            timeout=3600  # 1 hour timeout
+        # Run QUAST using cross-platform executor
+        stdout, stderr, returncode = run_command(
+            command=full_command,
+            working_dir=None,  # Let QUAST handle its own working directory
+            timeout=3600,  # 1 hour timeout
+            check=False  # We'll handle errors manually
         )
-        
-        stdout = process.stdout
-        stderr = process.stderr
-        returncode = process.returncode
         
         # Check if QUAST ran successfully
         success = returncode == 0
@@ -145,6 +154,8 @@ def run_quast_analysis(
         logger.info(f"QUAST return code: {returncode}")
         if stderr:
             logger.warning(f"QUAST stderr: {stderr}")
+        if stdout:
+            logger.debug(f"QUAST stdout preview: {stdout[:500]}...")
         
         # Parse results if successful
         result = {
@@ -152,6 +163,8 @@ def run_quast_analysis(
             "output_dir": output_dir,
             "command": full_command,
             "returncode": returncode,
+            "platform": get_platform().value,
+            "validation": validation
         }
         
         # Check if report files were actually created
@@ -186,7 +199,7 @@ def run_quast_analysis(
                 logger.error(f"Error parsing QUAST results: {str(e)}")
                 result["parse_error"] = str(e)
         else:
-            result["error"] = stderr
+            result["error"] = stderr or "QUAST execution failed"
         
         return result
     except Exception as e:
@@ -195,7 +208,9 @@ def run_quast_analysis(
             "success": False,
             "output_dir": output_dir,
             "error": f"Error executing QUAST: {str(e)}",
-            "command": full_command
+            "command": full_command,
+            "platform": get_platform().value,
+            "validation": validation
         }
 
 
