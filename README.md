@@ -2,19 +2,21 @@
 
 KrinoSeq is a bioinformatics tool for advanced length-based filtering of genomic sequences with quality assessment using QUAST (Quality Assessment Tool for Genome Assemblies).
 
-## Cross-Platform Support
+## 🚀 Quick Answer: Do I need WSL on macOS?
 
-KrinoSeq now supports multiple operating systems:
+**NO, you do not need WSL when working on a MacBook Pro M2.**
+
+WSL (Windows Subsystem for Linux) is a Windows-specific technology that allows running Linux environments on Windows systems. On macOS, which is already Unix-based, you can run bioinformatics tools like QUAST natively without any virtualization layer.
+
+## 🔧 Cross-Platform Support
+
+KrinoSeq now supports multiple operating systems with automatic platform detection:
 
 - **Windows**: Uses WSL (Windows Subsystem for Linux) for running QUAST
-- **macOS**: Uses native execution (no WSL required)
-- **Linux**: Uses native execution (no WSL required)
+- **macOS**: Uses native execution (no WSL required) ✅
+- **Linux**: Uses native execution (no WSL required) ✅
 
-## Quick Answer: Do I need WSL on macOS?
-
-**No, you do not need WSL when working on a MacBook Pro M2.** WSL (Windows Subsystem for Linux) is a Windows-specific technology that allows running Linux environments on Windows systems. On macOS, which is already Unix-based, you can run bioinformatics tools like QUAST natively.
-
-## Platform-Specific Setup
+## 📋 Platform-Specific Setup
 
 ### macOS Setup (MacBook Pro M2)
 
@@ -109,7 +111,7 @@ KrinoSeq now supports multiple operating systems:
 
 2. **Verify installation and continue** as described in the macOS section.
 
-## Running the Application
+## 🏃‍♂️ Running the Application
 
 ### Backend (API Server)
 
@@ -130,34 +132,40 @@ The application will be available at:
 - Backend API: http://localhost:8000
 - API Documentation: http://localhost:8000/docs
 
-## Checking Platform Status
+## 🔍 Checking Platform Status
 
 You can check your platform compatibility and QUAST installation status by visiting:
 ```
 http://localhost:8000/platform
 ```
 
-This endpoint will show:
+Or run the test script:
+```bash
+python test_cross_platform.py
+```
+
+This will show:
 - Current operating system information
 - Whether WSL is required for your platform
 - QUAST installation status
 - Platform-specific setup recommendations
 
-## Architecture
+## 🏗️ Architecture
 
 - **Frontend**: React/TypeScript application for the user interface
 - **Backend**: Python FastAPI application for processing and analysis
 - **Cross-platform execution**: Automatically detects your operating system and uses the appropriate execution method (WSL on Windows, native on macOS/Linux)
 
-## Key Features
+## ✨ Key Features
 
 - **Length-based filtering** of genomic sequences
 - **QUAST integration** for quality assessment
 - **Cross-platform compatibility** (Windows, macOS, Linux)
 - **Web-based interface** for easy interaction
 - **RESTful API** for programmatic access
+- **Automatic platform detection** and appropriate tool execution
 
-## Troubleshooting
+## 🛠️ Troubleshooting
 
 ### QUAST Not Found
 
@@ -173,8 +181,9 @@ If you get an error that QUAST is not found:
 If the application doesn't correctly detect your platform:
 
 1. Check the platform status endpoint: `GET /platform`
-2. Ensure you're using a supported Python version (3.7+)
-3. Check the application logs for detailed error messages
+2. Run the test script: `python test_cross_platform.py`
+3. Ensure you're using a supported Python version (3.7+)
+4. Check the application logs for detailed error messages
 
 ### WSL Issues (Windows only)
 
@@ -184,14 +193,32 @@ If you encounter WSL-related issues on Windows:
 2. Verify your Linux distribution is running: `wsl -l -v`
 3. Test QUAST directly in WSL: `wsl quast.py --version`
 
-## Contributing
+## 🧪 Testing
+
+Run the cross-platform compatibility test:
+```bash
+python test_cross_platform.py
+```
+
+This script will:
+- Detect your platform automatically
+- Answer whether WSL is needed for your system
+- Check QUAST installation status
+- Provide platform-specific setup instructions
+- Test cross-platform command execution
+
+## 🤝 Contributing
 
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
-4. Test on your platform
+4. Test on your platform using `python test_cross_platform.py`
 5. Submit a pull request
 
-## License
+## 📄 License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
+
+---
+
+**TL;DR for MacBook Pro M2 users:** No, you don't need WSL. Just install QUAST natively using `pip install quast` or `brew install quast` and you're good to go! 🎉
